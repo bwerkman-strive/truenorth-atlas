@@ -1,0 +1,145 @@
+// API reference content for the admin panel — a pure data module so the
+// documented response shapes can be unit-tested against the real contract.
+// Every example below mirrors the actual serializer output field-for-field.
+
+export const API_AUTH_DOC = {
+  header: 'X-API-Key',
+  keyFormat: 'tn_live_<43 url-safe base64 characters>',
+  curl: `curl -H "X-API-Key: tn_live_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" \\
+  https://YOUR-API-HOST/v1/address/bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq`,
+  errors: [
+    { status: 401, body: { error: 'missing or malformed API key (X-API-Key header)' } },
+    { status: 401, body: { error: 'unknown API key' } },
+    { status: 401, body: { error: 'API key revoked' } },
+  ],
+};
+
+export const API_ENDPOINTS = [
+  {
+    method: 'GET',
+    path: '/v1/search?q={query}',
+    title: 'Universal search',
+    desc: 'Dispatches any query — block height, block hash, transaction ID, or address — to the right lookup. The response nests the same object the dedicated endpoint would return, under "block", "tx", or "address".',
+    example: '/v1/search?q=840000',
+    response: {
+      found: 'block',
+      block: {
+        height: 840000,
+        hash: '0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5',
+        time: 1713571767,
+        tx_count: 3050,
+        subsidy_sat: 312500000,
+        fees_sat: 3762561499,
+        difficulty: 86388558925171.02,
+        detail: '…full node detail when RPC is available (see /v1/block)…',
+        rpc: true,
+      },
+    },
+    notes: 'When nothing matches: { "found": null }. Unrecognized input adds a "hint" string.',
+  },
+  {
+    method: 'GET',
+    path: '/v1/block/{height-or-hash}',
+    title: 'Block lookup',
+    desc: 'Accepts a height (e.g. 840000) or a 64-hex block hash. Local-index fields (subsidy, fees) are always present once the block is synced; "detail" carries full node data (size, weight, merkle root, txid list) when the API has RPC access, otherwise null with "rpc": false.',
+    example: '/v1/block/840000',
+    response: {
+      height: 840000,
+      hash: '0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5',
+      time: 1713571767,
+      tx_count: 3050,
+      subsidy_sat: 312500000,
+      fees_sat: 3762561499,
+      difficulty: 86388558925171.02,
+      detail: {
+        hash: '0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5',
+        height: 840000,
+        time: 1713571767,
+        size: 2325617,
+        weight: 3993304,
+        version: 710926336,
+        merkleroot: '031e6d…',
+        nonce: 3932395645,
+        bits: '17034219',
+        difficulty: 86388558925171.02,
+        previousblockhash: '0000000000000000000172014ba58d66455762add0512355ad651207918494ab',
+        nextblockhash: '00000000000000000001a0a4…',
+        txids: ['<3,050 transaction ids>'],
+      },
+      rpc: true,
+    },
+    notes: '404 if the block is beyond the synced tip. 400 for malformed input.',
+  },
+  {
+    method: 'GET',
+    path: '/v1/tx/{txid}',
+    title: 'Transaction lookup',
+    desc: 'Full input/output detail when the node is reachable — including without txindex, via the app\'s own UTXO index. Output "spent" flags are merged from the live UTXO set: true, false, or null when no longer tracked.',
+    example: '/v1/tx/eae06e…f024',
+    response: {
+      txid: 'eae06e0225e3fa4dbfbc26b3fed384e0eb4e0f0b2d3bd41c4d4e0fca7cd0f024',
+      block_height: 840000,
+      block_hash: '0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5',
+      time: 1713571767,
+      coinbase: false,
+      inputs: [
+        {
+          txid: '5b93e0f4…',
+          vout: 1,
+          value_btc: 0.2205,
+          address: 'bc1q9d4ywgfnd8h43da5tpcxcn6ajv590cg6d3tg6axemvljvt2k76zs50tv4q',
+        },
+      ],
+      outputs: [
+        { n: 0, value_btc: 0.15, address: '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', type: 'pubkeyhash', spent: false },
+        { n: 1, value_btc: 0.07, address: 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', type: 'v0_p2wpkh', spent: true },
+      ],
+      rpc: true,
+    },
+    notes: 'Coinbase transactions return "coinbase": true and inputs: [{ "coinbase": true }]. Without RPC, outputs still tracked in the UTXO set are returned with "rpc": false.',
+  },
+  {
+    method: 'GET',
+    path: '/v1/address/{address}',
+    title: 'Address balance & UTXOs',
+    desc: 'Confirmed balance and live unspent outputs, exact from genesis (the sync worker records the address of every output it ingests). USD value uses the latest daily close. Legacy (1…), P2SH (3…), SegWit (bc1q…), and Taproot (bc1p…) formats accepted.',
+    example: '/v1/address/bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq',
+    response: {
+      address: 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq',
+      balance_sat: 8000010000,
+      balance_btc: 80.0001,
+      balance_usd: 8544106.84,
+      utxo_count: 2,
+      utxos: [
+        {
+          txid: 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+          vout: 1,
+          value_sat: 2999990000,
+          height: 840002,
+          time: 1713573000,
+        },
+      ],
+      note: 'Balance and UTXOs reflect the synced chain tip. Spent-output history is retained only for recent blocks.',
+    },
+    notes: 'Valid-but-unused addresses return a clean zero balance (200), never a 404. UTXO list caps at 500 entries; "utxo_count" is always the full count.',
+  },
+  {
+    method: 'GET',
+    path: '/v1/blocks/recent',
+    title: 'Recent blocks',
+    desc: 'The 12 most recently synced blocks — a lightweight feed for dashboards.',
+    example: '/v1/blocks/recent',
+    response: {
+      blocks: [
+        {
+          height: 840001,
+          hash: '00000000000000000002c0cc73626b56fb3ee1ce605b0ce125cc4fb58775a0a9',
+          time: 1713572132,
+          tx_count: 2412,
+          fees_sat: 1893441267,
+        },
+      ],
+    },
+    notes: null,
+  },
+];

@@ -1,0 +1,116 @@
+# True North Atlas — Render Blueprint
+# Deploys: read API (web service), sync worker (background worker),
+# the frontend (static site), and Postgres.
+#
+# After the first deploy, set the un-synced env vars (marked sync: false)
+# in the Render dashboard — values are listed in README.md.
+
+databases:
+  - name: atlas-db
+    plan: basic-4gb          # upgrade RAM as needed; disk is what matters most
+    diskSizeGB: 150          # full UTXO set + indexes; see README "Sizing"
+    postgresMajorVersion: "16"
+
+services:
+  # ---- Read API ------------------------------------------------------------
+  - type: web
+    name: atlas-api
+    runtime: node
+    plan: starter
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: atlas-db
+          property: connectionString
+      - key: CORS_ORIGIN
+        value: https://tnorth.com,https://www.tnorth.com
+      - key: API_CACHE_SECONDS
+        value: "300"
+      - key: ADMIN_TOKEN
+        generateValue: true   # protects /api/admin (key create/list/revoke)
+      - key: PUBLIC_RATE_LIMIT_PER_MIN
+        value: "60"
+      # Growth features: shareable chart cards + email alerts
+      - key: PUBLIC_SITE_URL
+        value: https://atlas.tnorth.com
+      - key: PUBLIC_API_URL
+        sync: false           # this service's own public URL, once known
+      - key: RESEND_API_KEY
+        sync: false           # from resend.com — alerts disabled if unset
+      - key: ALERTS_FROM_EMAIL
+        value: Atlas Alerts <alerts@tnorth.com>
+      # Signup kill switches — flip to "true" when you're ready to open the doors.
+      # Gating applies to NEW signups only; unsubscribes and confirmed alerts
+      # always keep working.
+      - key: ALERT_SIGNUP_ENABLED
+        value: "false"
+      - key: NEWSLETTER_SIGNUP_ENABLED
+        value: "false"
+      # Massive (formerly Polygon.io): live spot price for the header + canonical
+      # daily closes from 2015 forward. Falls back gracefully if unset.
+      - key: MASSIVE_API_KEY
+        sync: false
+      # Optional: give the API RPC access to enable full block tx lists and
+      # transaction detail in the explorer (same options as the worker —
+      # LAN/VPN/Tor). Without it, the explorer serves DB-backed data.
+      - key: BITCOIN_RPC_URL
+        sync: false
+      - key: BITCOIN_RPC_USER
+        sync: false
+      - key: BITCOIN_RPC_PASSWORD
+        sync: false
+      - key: TOR_SOCKS_PROXY
+        sync: false
+
+  # ---- Sync worker ----------------------------------------------------------
+  # NOTE: if your node is only reachable on your LAN or over Tor (Start9,
+  # Umbrel), you may prefer to run this worker at home instead — see README
+  # "Connecting a Start9 node". It works anywhere; it only needs DATABASE_URL
+  # and RPC access.
+  - type: worker
+    name: atlas-sync
+    runtime: node
+    plan: standard            # sync is CPU/RAM hungry during initial replay
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm run worker
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: atlas-db
+          property: connectionString
+      - key: BITCOIN_RPC_URL
+        sync: false           # e.g. http://<your-node>:8332
+      - key: BITCOIN_RPC_USER
+        sync: false
+      - key: BITCOIN_RPC_PASSWORD
+        sync: false
+      - key: TOR_SOCKS_PROXY
+        sync: false           # only if the node is a .onion (see README)
+      - key: CRYPTOCOMPARE_API_KEY
+        sync: false           # deep-history backfill (2010–2015); optional key raises limits
+      - key: MASSIVE_API_KEY
+        sync: false           # canonical daily closes from 2015 forward
+      - key: SYNC_BATCH_BLOCKS
+        value: "25"
+      - key: RPC_CONCURRENCY
+        value: "4"
+
+  # ---- Frontend (static) -----------------------------------------------------
+  - type: web
+    name: atlas-web
+    runtime: static
+    rootDir: web
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false           # set to the atlas-api URL, e.g. https://atlas-api.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

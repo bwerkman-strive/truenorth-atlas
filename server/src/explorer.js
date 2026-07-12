@@ -1,0 +1,265 @@
+// Block explorer backend.
+//
+// Data strategy: DB-first, RPC-enriched.
+//   - blocks table       -> block summaries (height, hash, time, fees, difficulty)
+//   - utxos table        -> address balances + live UTXO listings (exact,
+//                           because the sync worker maintains the full UTXO set
+//                           with addresses from genesis)
+//   - Bitcoin Core RPC   -> full block tx lists and transaction detail, when
+//                           the API service can reach the node. Without RPC,
+//                           the explorer still works: DB-backed answers with
+//                           `rpc: false` flagged in responses.
+//
+// Transaction lookup works even WITHOUT txindex on the node: if any output of
+// the tx is still tracked in our UTXO table (unspent, or spent within the
+// prune window), we know its block and fetch it by blockhash.
+import express from 'express';
+import { pool } from './db.js';
+import { rpc } from './rpc.js';
+import { config } from './config.js';
+
+const HEX64 = /^[0-9a-f]{64}$/i;
+const HEIGHT = /^\d{1,9}$/;
+// Mainnet address shapes: P2PKH (1…), P2SH (3…), bech32 (bc1q…), taproot (bc1p…)
+const ADDR = /^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[qp][a-z0-9]{38,58})$/;
+
+let rpcAvailable = null; // tri-state: null=unknown, true/false=probed
+async function rpcUp() {
+  if (rpcAvailable !== null) return rpcAvailable;
+  if (!config.rpcUser && !config.rpcPass && config.rpcUrl.includes('127.0.0.1')) {
+    rpcAvailable = false; return false; // clearly unconfigured
+  }
+  try { await rpc.getBestBlockHash(); rpcAvailable = true; }
+  catch { rpcAvailable = false; }
+  setTimeout(() => { rpcAvailable = null; }, 60_000).unref?.(); // re-probe every minute
+  return rpcAvailable;
+}
+
+// ---------------------------------------------------------------------------
+async function blockFromDb(idOrHash) {
+  const byHeight = HEIGHT.test(idOrHash);
+  const r = await pool.query(
+    `SELECT height, hash, EXTRACT(EPOCH FROM time)::bigint AS time, day::text,
+            tx_count, subsidy_sat, fees_sat, difficulty
+     FROM blocks WHERE ${byHeight ? 'height = $1' : 'hash = $1'}`,
+    [byHeight ? Number(idOrHash) : idOrHash.toLowerCase()]);
+  return r.rows[0] ?? null;
+}
+
+export async function getBlock(idOrHash) {
+  const db = await blockFromDb(idOrHash);
+  let node = null;
+  if (await rpcUp()) {
+    try {
+      const hash = db?.hash ?? (HEIGHT.test(idOrHash)
+        ? await rpc.getBlockHash(Number(idOrHash))
+        : idOrHash.toLowerCase());
+      const b = await rpc.getBlockV3(hash);
+      node = {
+        hash: b.hash, height: b.height, time: b.time, size: b.size, weight: b.weight,
+        version: b.version, merkleroot: b.merkleroot, nonce: b.nonce, bits: b.bits,
+        difficulty: b.difficulty, previousblockhash: b.previousblockhash,
+        nextblockhash: b.nextblockhash ?? null,
+        txids: b.tx.map(t => t.txid),
+      };
+    } catch { /* fall through to DB-only */ }
+  }
+  if (!db && !node) return null;
+  return {
+    height: node?.height ?? db.height,
+    hash: node?.hash ?? db.hash,
+    time: node?.time ?? Number(db.time),
+    tx_count: node?.txids?.length ?? db?.tx_count ?? null,
+    subsidy_sat: db ? Number(db.subsidy_sat) : null,
+    fees_sat: db ? Number(db.fees_sat) : null,
+    difficulty: node?.difficulty ?? (db ? Number(db.difficulty) : null),
+    detail: node,           // null when RPC unreachable
+    rpc: !!node,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Find the block containing a txid using our own UTXO table (works without
+// txindex as long as one output is still tracked).
+async function blockHashForTx(txid) {
+  const r = await pool.query(
+    `SELECT b.hash FROM utxos u JOIN blocks b ON b.height = u.created_height
+     WHERE u.txid = $1 LIMIT 1`, [Buffer.from(txid, 'hex')]);
+  return r.rows[0]?.hash ?? null;
+}
+
+export async function getTx(txid) {
+  txid = txid.toLowerCase();
+  const outsR = await pool.query(
+    `SELECT vout, value_sat, address, created_height, spent_height, coinbase
+     FROM utxos WHERE txid = $1 ORDER BY vout`, [Buffer.from(txid, 'hex')]);
+  const tracked = outsR.rows;
+
+  let node = null;
+  if (await rpcUp()) {
+    try {
+      // Prefer direct lookup (works if node has txindex=1)…
+      node = await rpc.getRawTransactionVerbose(txid);
+    } catch {
+      // …fall back to fetching by blockhash learned from our UTXO table.
+      const bh = await blockHashForTx(txid);
+      if (bh) {
+        try {
+          const blk = await rpc.getBlockV3(bh);
+          const t = blk.tx.find(x => x.txid === txid);
+          if (t) node = { ...t, blockhash: blk.hash, blocktime: blk.time, blockheight: blk.height };
+        } catch { /* DB-only */ }
+      }
+    }
+  }
+  if (!node && !tracked.length) return null;
+
+  return {
+    txid,
+    block_height: node?.blockheight ?? tracked[0]?.created_height ?? null,
+    block_hash: node?.blockhash ?? null,
+    time: node?.blocktime ?? null,
+    coinbase: node ? (node.vin?.[0]?.coinbase !== undefined) : !!tracked[0]?.coinbase,
+    inputs: node?.vin?.map(v => v.coinbase !== undefined
+      ? { coinbase: true }
+      : { txid: v.txid, vout: v.vout, value_btc: v.prevout?.value ?? null,
+          address: v.prevout?.scriptPubKey?.address ?? null }) ?? null,
+    outputs: node
+      ? node.vout.map(o => ({
+          n: o.n, value_btc: o.value, address: o.scriptPubKey?.address ?? null,
+          type: o.scriptPubKey?.type,
+          spent: tracked.find(t => t.vout === o.n)?.spent_height != null ? true
+            : tracked.find(t => t.vout === o.n) ? false : null,
+        }))
+      : tracked.map(t => ({
+          n: t.vout, value_btc: Number(t.value_sat) / 1e8, address: t.address,
+          spent: t.spent_height != null,
+        })),
+    rpc: !!node,
+  };
+}
+
+// ---------------------------------------------------------------------------
+export async function getAddress(addr) {
+  const [bal, utxoR, priceR] = await Promise.all([
+    pool.query(
+      `SELECT COALESCE(SUM(value_sat),0)::bigint AS sat, COUNT(*)::int AS n
+       FROM utxos WHERE address = $1 AND spent_height IS NULL`, [addr]),
+    pool.query(
+      `SELECT encode(txid,'hex') AS txid, vout, value_sat::bigint AS value_sat,
+              created_height, EXTRACT(EPOCH FROM created_time)::bigint AS created_time
+       FROM utxos WHERE address = $1 AND spent_height IS NULL
+       ORDER BY created_height DESC LIMIT 500`, [addr]),
+    pool.query(`SELECT close_usd::float p FROM prices ORDER BY day DESC LIMIT 1`),
+  ]);
+  const sat = Number(bal.rows[0].sat);
+  const px = priceR.rows[0]?.p ?? null;
+  return {
+    address: addr,
+    balance_sat: sat,
+    balance_btc: sat / 1e8,
+    balance_usd: px != null ? (sat / 1e8) * px : null,
+    utxo_count: bal.rows[0].n,
+    utxos: utxoR.rows.map(u => ({
+      txid: u.txid, vout: u.vout, value_sat: Number(u.value_sat),
+      height: u.created_height, time: Number(u.created_time),
+    })),
+    note: 'Balance and UTXOs reflect the synced chain tip. Spent-output history is retained only for recent blocks.',
+  };
+}
+
+// ---------------------------------------------------------------------------
+export function classify(q) {
+  q = q.trim();
+  if (HEIGHT.test(q)) return { type: 'block', q };
+  if (ADDR.test(q)) return { type: 'address', q };
+  if (HEX64.test(q)) return { type: 'hash64', q: q.toLowerCase() };
+  return { type: 'unknown', q };
+}
+
+export async function search(q) {
+  const c = classify(q);
+  if (c.type === 'block') {
+    const b = await getBlock(c.q);
+    return b ? { found: 'block', block: b } : { found: null };
+  }
+  if (c.type === 'address') {
+    return { found: 'address', address: await getAddress(c.q) };
+  }
+  if (c.type === 'hash64') {
+    // 64-hex is ambiguous: block hash or txid. Blocks are cheap to check first.
+    const b = await getBlock(c.q);
+    if (b) return { found: 'block', block: b };
+    const t = await getTx(c.q);
+    if (t) return { found: 'tx', tx: t };
+    return { found: null };
+  }
+  return { found: null, hint: 'Enter a block height, block hash, transaction ID, or address.' };
+}
+
+// ---------------------------------------------------------------------------
+// Simple fixed-window per-IP rate limiter for the free public surface.
+// (Keyed /v1 traffic is not limited here.)
+const hits = new Map();
+export function publicRateLimit(req, res, next) {
+  const limit = config.publicRateLimit;
+  if (limit <= 0) return next();
+  const now = Date.now();
+  const win = Math.floor(now / 60_000);
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress;
+  const k = `${ip}:${win}`;
+  const n = (hits.get(k) ?? 0) + 1;
+  hits.set(k, n);
+  if (hits.size > 50_000) { // bounded memory
+    for (const key of hits.keys()) { if (!key.endsWith(`:${win}`)) hits.delete(key); }
+  }
+  if (n > limit) return res.status(429).json({ error: 'rate limited — get an API key for programmatic access' });
+  next();
+}
+
+// ---------------------------------------------------------------------------
+// One router serves both surfaces; the caller mounts it publicly at
+// /api/explorer (rate-limited) and privately at /v1 (behind requireApiKey).
+export function explorerRouter() {
+  const r = express.Router();
+
+  r.get('/search', async (req, res) => {
+    try { res.json(await search(String(req.query.q ?? ''))); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  r.get('/block/:id', async (req, res) => {
+    const id = String(req.params.id);
+    if (!HEIGHT.test(id) && !HEX64.test(id)) return res.status(400).json({ error: 'block height or hash required' });
+    try {
+      const b = await getBlock(id);
+      b ? res.json(b) : res.status(404).json({ error: 'block not found (or not yet synced)' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  r.get('/tx/:txid', async (req, res) => {
+    if (!HEX64.test(req.params.txid)) return res.status(400).json({ error: 'txid must be 64 hex chars' });
+    try {
+      const t = await getTx(req.params.txid);
+      t ? res.json(t) : res.status(404).json({ error: 'transaction not found' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  r.get('/address/:addr', async (req, res) => {
+    if (!ADDR.test(req.params.addr)) return res.status(400).json({ error: 'unrecognized address format' });
+    try { res.json(await getAddress(req.params.addr)); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  r.get('/blocks/recent', async (_req, res) => {
+    try {
+      const r2 = await pool.query(
+        `SELECT height, hash, EXTRACT(EPOCH FROM time)::bigint AS time, tx_count,
+                fees_sat::bigint AS fees_sat
+         FROM blocks ORDER BY height DESC LIMIT 12`);
+      res.json({ blocks: r2.rows.map(b => ({ ...b, time: Number(b.time), fees_sat: Number(b.fees_sat) })) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  return r;
+}

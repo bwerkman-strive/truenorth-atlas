@@ -1,0 +1,28 @@
+{
+  "name": "truenorth-atlas-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/api.js",
+    "worker": "node src/sync.js",
+    "migrate": "node src/migrate.js",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "node --test test/unit.*.test.js",
+    "test:integration": "node --test --test-concurrency=1 test/integration.*.test.js",
+    "test:coverage": "node --test --test-concurrency=1 --experimental-test-coverage test/*.test.js"
+  },
+  "dependencies": {
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "pg": "^8.12.0",
+    "pino": "^9.3.2",
+    "sharp": "^0.35.3",
+    "socks-proxy-agent": "^10.1.0",
+    "undici": "^6.19.8"
+  }
+}
