@@ -13,6 +13,8 @@ Core node (Start9, Core 25+, no txindex needed).
 cd server && npm ci
 npm run test:unit                      # no database needed
 docker compose up -d db                # scratch Postgres on :5433 (repo root)
+#   no Docker? scripts/scratch-db.sh start|stop gives the same DB via
+#   Homebrew postgresql@16 (auto-installs nothing; prints install hint)
 DATABASE_URL=postgres://atlas:atlas@localhost:5433/atlas_test PGSSLMODE=disable npm test
 npm run test:coverage                  # same env; line/branch report
 npm run migrate                        # apply src/schema.sql (idempotent)
