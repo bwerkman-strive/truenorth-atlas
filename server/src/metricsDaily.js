@@ -165,7 +165,7 @@ export async function resetRollupFrom(lastGoodDay) {
     const r = await client.query(`
       SELECT COALESCE(SUM(circulating_supply),0) cds,
              COALESCE(SUM(price * (1 - COALESCE(liveliness,0))),0) bank,
-             COALESCE(MAX(EXTRACT(EPOCH FROM day::timestamptz)/86400),0) last
+             COALESCE(MAX(day - '1970-01-01'::date),0) last
       FROM metrics_daily`);
     await setState(client, 'cum_coindays_created', Number(r.rows[0].cds));
     await setState(client, 'hodl_bank', Number(r.rows[0].bank));

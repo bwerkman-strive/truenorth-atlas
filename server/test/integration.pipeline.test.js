@@ -197,12 +197,22 @@ test('finalization is idempotent (re-running a day is a no-op)', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Every key in chain_state, not just the ones this test knows about — so a new
+// running counter added to processBlocks without a matching reversal in
+// rollbackAbove() fails here instead of silently corrupting state at the next
+// real reorg.
+const allState = async () => {
+  const r = await pool.query('SELECT key, value::float8 v FROM chain_state ORDER BY key');
+  return Object.fromEntries(r.rows.map(({ key, v }) => [key, v]));
+};
+
 test('reorg: rollbackAbove restores every counter and the UTXO set exactly', async () => {
   // Advance into day 3 first.
   await processBlocks(chain().filter(b => dayOf(b.time) === D3));
   const rcBefore = await getState(pool, 'realized_cap_usd');
   const cddBefore = await getState(pool, 'cum_cdd');
   const supplyBefore = await getState(pool, 'circulating_supply_sat');
+  const stateBefore = await allState();
   const unspentBefore = (await pool.query(
     'SELECT COUNT(*)::int c FROM utxos WHERE spent_height IS NULL')).rows[0].c;
 
@@ -226,6 +236,14 @@ test('reorg: rollbackAbove restores every counter and the UTXO set exactly', asy
   assert.ok(Math.abs(await getState(pool, 'realized_cap_usd') - rcBefore) < 1e-6, 'realized cap restored');
   assert.ok(Math.abs(await getState(pool, 'cum_cdd') - cddBefore) < 1e-9, 'cum CDD restored');
   assert.equal(await getState(pool, 'circulating_supply_sat'), supplyBefore, 'supply restored');
+
+  const stateAfter = await allState();
+  assert.deepEqual(Object.keys(stateAfter), Object.keys(stateBefore), 'no chain_state keys appeared/vanished');
+  for (const [key, before] of Object.entries(stateBefore)) {
+    const tol = Math.max(1e-6, Math.abs(before) * 1e-12);
+    assert.ok(Math.abs(stateAfter[key] - before) < tol,
+      `chain_state '${key}' not restored: ${before} -> ${stateAfter[key]} (missing reversal in rollbackAbove?)`);
+  }
 
   const unspent = (await pool.query(
     'SELECT COUNT(*)::int c FROM utxos WHERE spent_height IS NULL')).rows[0].c;

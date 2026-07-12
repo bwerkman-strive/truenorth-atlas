@@ -62,7 +62,7 @@ export async function rollbackAbove(height) {
     await client.query('BEGIN');
     const sums = await client.query(
       `SELECT COALESCE(SUM(realized_cap_delta),0) AS rc, COALESCE(SUM(cdd),0) AS cdd,
-              COALESCE(SUM(vdd_usd),0) AS vdd
+              COALESCE(SUM(vdd_usd),0) AS vdd, COALESCE(SUM(miner_rev_usd),0) AS mrev
        FROM block_agg WHERE height > $1`, [height]);
     const mint = await client.query(
       `SELECT COALESCE(SUM(subsidy_sat),0) AS m FROM blocks WHERE height > $1`, [height]);
@@ -72,6 +72,7 @@ export async function rollbackAbove(height) {
     await setState(client, 'realized_cap_usd', await getState(client, 'realized_cap_usd') - Number(sums.rows[0].rc));
     await setState(client, 'cum_cdd', await getState(client, 'cum_cdd') - Number(sums.rows[0].cdd));
     await setState(client, 'cum_vdd_usd', await getState(client, 'cum_vdd_usd') - Number(sums.rows[0].vdd));
+    await setState(client, 'cum_miner_rev_usd', await getState(client, 'cum_miner_rev_usd') - Number(sums.rows[0].mrev));
     await setState(client, 'circulating_supply_sat', await getState(client, 'circulating_supply_sat') - Number(mint.rows[0].m));
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
@@ -181,14 +182,15 @@ export async function processBlocks(blocks) {
          VALUES ($1,$2,to_timestamp($3),$4,$5,$6,$7,$8)`,
         [b.height, b.hash, b.time, day, b.tx.length, mintedSat - feesSat, feesSat, b.difficulty ?? 0]);
 
+      const minerRevUsd = (mintedSat / SAT) * spot;
       await client.query(
         `INSERT INTO block_agg (height, day, realized_cap_delta, sopr_num, sopr_den, asopr_num, asopr_den,
             sth_sopr_num, sth_sopr_den, lth_sopr_num, lth_sopr_den, realized_profit, realized_loss,
-            cdd, vdd_usd, transfer_vol_sat)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+            cdd, vdd_usd, transfer_vol_sat, miner_rev_usd)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
         [b.height, day, agg.rcDelta, agg.soprN, agg.soprD, agg.asoprN, agg.asoprD,
          agg.sthN, agg.sthD, agg.lthN, agg.lthD, agg.profit, agg.loss,
-         agg.cdd, agg.vdd, agg.volSat]);
+         agg.cdd, agg.vdd, agg.volSat, minerRevUsd]);
 
       // Running tip-level counters
       await setState(client, 'realized_cap_usd', await getState(client, 'realized_cap_usd') + agg.rcDelta);
@@ -196,7 +198,7 @@ export async function processBlocks(blocks) {
       await setState(client, 'cum_vdd_usd', await getState(client, 'cum_vdd_usd') + agg.vdd);
       // Issuance = claimed subsidy only; fees in the coinbase are recycled coins.
       await setState(client, 'circulating_supply_sat', await getState(client, 'circulating_supply_sat') + (mintedSat - feesSat));
-      await setState(client, 'cum_miner_rev_usd', await getState(client, 'cum_miner_rev_usd') + (mintedSat / SAT) * spot);
+      await setState(client, 'cum_miner_rev_usd', await getState(client, 'cum_miner_rev_usd') + minerRevUsd);
 
       heightMeta[b.height] = { t: b.time, d: day };
     }

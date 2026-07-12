@@ -68,14 +68,24 @@ CREATE TABLE IF NOT EXISTS block_agg (
   cdd               NUMERIC NOT NULL DEFAULT 0,  -- coin-days destroyed (BTC*days)
   vdd_usd           NUMERIC NOT NULL DEFAULT 0,  -- CDD * spend-day price
   transfer_vol_sat  BIGINT  NOT NULL DEFAULT 0,  -- non-coinbase spend volume
+  miner_rev_usd     NUMERIC,                     -- coinbase reward (subsidy+fees) × close; reverses cum_miner_rev_usd on reorg
   day_offset_seconds BIGINT NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS block_agg_day_idx ON block_agg(day);
+ALTER TABLE block_agg ADD COLUMN IF NOT EXISTS miner_rev_usd NUMERIC;
 
 CREATE TABLE IF NOT EXISTS prices (
   day       DATE PRIMARY KEY,
   close_usd NUMERIC NOT NULL
 );
+
+-- Backfill block_agg rows synced before miner_rev_usd existed (no-op once
+-- filled; a row whose day has no finalized close yet stays NULL and is picked
+-- up on a later run). Lives below prices, which it joins.
+UPDATE block_agg a
+SET miner_rev_usd = (b.subsidy_sat + b.fees_sat) / 1e8 * p.close_usd
+FROM blocks b JOIN prices p ON p.day = b.day
+WHERE b.height = a.height AND a.miner_rev_usd IS NULL;
 
 CREATE TABLE IF NOT EXISTS metrics_daily (
   day                DATE PRIMARY KEY,
