@@ -1,0 +1,12 @@
+# Scratch Postgres for the integration test suite. Never point tests at real data.
+#   docker compose up -d db
+#   cd server && DATABASE_URL=postgres://atlas:atlas@localhost:5433/atlas_test PGSSLMODE=disable npm test
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas
+      POSTGRES_DB: atlas_test
+    ports: ["5433:5432"]   # 5433 to avoid colliding with a local Postgres
+    tmpfs: [/var/lib/postgresql/data]   # throwaway by design
