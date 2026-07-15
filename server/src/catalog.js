@@ -94,6 +94,13 @@ export const METRICS = [
     method: 'Circulating supply (sum of all coinbase issuance actually claimed) × daily close.',
   },
   {
+    slug: 'cost-basis-distribution', column: 'urpd', name: 'Cost Basis Distribution', category: 'valuation', ...num,
+    kind: 'urpd',
+    short: 'How much supply was acquired at each price level.',
+    explain: 'The ledger\'s order book of conviction: every unspent coin stacked at the price it last moved. Dense clusters below spot are support (holders defending profitable positions); heavy supply overhead is resistance (trapped buyers waiting to exit at break-even). Where spot sits inside this terrain matters more than any single average.',
+    method: 'The live UTXO set bucketed by creation-day USD close into 100 uniform price bins from $0 to the highest close on record, snapshotted at each UTC day end. Exact, not sampled: every coin is counted.',
+  },
+  {
     slug: 'true-market-mean', column: 'true_market_mean', columns: ['true_market_mean', 'price'], name: 'True Market Mean', category: 'valuation', ...usd,
     logDefault: true, overlayPrice: true,
     short: 'The cost basis of active investors, with miner coins and dormant history discounted.',

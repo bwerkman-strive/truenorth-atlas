@@ -81,7 +81,7 @@ function linePath(rows, x0, y0, w, h) {
 
 export async function buildCardSvg(slug) {
   const m = bySlug[slug];
-  if (!m || m.kind === 'stacked') return null;
+  if (!m || m.kind === 'stacked' || m.kind === 'urpd') return null;
   const col = Array.isArray(m.column) ? m.column[0] : m.column;
 
   const [seriesR, latestR, pctR] = await Promise.all([

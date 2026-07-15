@@ -74,12 +74,14 @@ export default function Overview({ catalog, latest, onOpen }) {
                       <div>
                         <h3>{m.name}</h3>
                         <div className="val" style={m.slug === 'price' ? { color: 'var(--btc)' } : undefined}>
-                          {m.kind === 'stacked' ? 'View bands →' : fmt(v?.value, m.format, m.unit)}
+                          {m.kind === 'stacked' ? 'View bands →'
+                            : m.kind === 'urpd' ? 'View distribution →'
+                            : fmt(v?.value, m.format, m.unit)}
                         </div>
                       </div>
-                      {m.kind !== 'stacked' && <BearingDial percentile={v?.percentile} />}
+                      {m.kind !== 'stacked' && m.kind !== 'urpd' && <BearingDial percentile={v?.percentile} />}
                     </div>
-                    {m.kind !== 'stacked' && <Spark data={v?.spark} />}
+                    {m.kind !== 'stacked' && m.kind !== 'urpd' && <Spark data={v?.spark} />}
                     <p className="short">{m.short}</p>
                   </button>
                 );

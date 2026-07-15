@@ -5,7 +5,8 @@ fully-validating Bitcoin Core node. No third-party data vendors between you and
 the ledger. Free, for the community.
 
 - **~50 metrics** across valuation (MVRV, MVRV-Z, Mayer, NUPL, realized/
-  balanced price, AVIV & true market mean, terminal/delta price), profit & loss
+  balanced price, AVIV & true market mean, terminal/delta price, and an exact
+  cost-basis distribution of the entire supply), profit & loss
   (SOPR family, realized P&L, supply in profit, sell-side risk), holder
   behavior (CDD, dormancy, liveliness, VDD, reserve risk, HODL waves, RHODL),
   cohorts (STH/LTH supply, cost basis, MVRV, NUPL, supply in profit), mining (Puell, hashrate,
@@ -306,7 +307,7 @@ cd web && npm ci && npm run dev     # http://localhost:5173
 
 ## Testing
 
-106 tests (88 server, 18 web). The server has unit suites (subsidy schedule,
+108 tests (90 server, 18 web). The server has unit suites (subsidy schedule,
 catalog↔schema integrity, RPC transport) that run without a database, plus
 Postgres-backed integration
 suites that replay a synthetic chain against mock providers and verify the

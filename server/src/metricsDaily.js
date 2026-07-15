@@ -54,6 +54,32 @@ export async function snapshotAndRollupDay(day, log) {
     rcWaves[k] = setRc > 0 ? rcWaves[k] / setRc : 0;
   }
 
+  // ---- Cost-basis distribution (URPD): supply bucketed by acquisition price --
+  // 100 uniform buckets from $0 to the highest close seen so far (created_price
+  // can never exceed it). A second scan of the live set; it runs once per day
+  // inside the boundary pause, where exactness is the product.
+  const URPD_BUCKETS = 100;
+  const topR = await pool.query(
+    `SELECT COALESCE(MAX(close_usd), 0)::float AS top FROM prices WHERE day <= $1`, [day]);
+  const urpdTop = topR.rows[0].top;
+  let urpd = null;
+  if (urpdTop > 0) {
+    const w = urpdTop / URPD_BUCKETS;
+    const dist = await pool.query(`
+      SELECT LEAST(FLOOR(created_price / $1)::int, ${URPD_BUCKETS - 1}) AS b,
+             SUM(value_sat)::numeric / 1e8 AS v
+      FROM utxos WHERE spent_height IS NULL
+      GROUP BY 1 ORDER BY 1`, [w]);
+    urpd = {
+      width: w,
+      top: urpdTop,
+      buckets: dist.rows.map(r => ({
+        p: Math.round(Number(r.b) * w * 100) / 100,
+        v: Number(r.v),
+      })),
+    };
+  }
+
   // ---- Flow rollup from per-block aggregates --------------------------------
   const f = (await pool.query(`
     SELECT COALESCE(SUM(sopr_num),0) sn, COALESCE(SUM(sopr_den),0) sd,
@@ -130,10 +156,10 @@ export async function snapshotAndRollupDay(day, log) {
         miner_rev_usd, fees_pct_rev, hashrate_ehs, difficulty, thermocap, thermocap_multiple,
         balanced_price, transferred_price, nvt, tx_count, transfer_vol_btc, transfer_vol_usd,
         aviv, true_market_mean, sth_nupl, lth_nupl, sell_side_risk, rhodl, dormancy,
-        terminal_price, supply_1y_plus_pct, sth_profit_pct, lth_profit_pct)
+        terminal_price, supply_1y_plus_pct, sth_profit_pct, lth_profit_pct, urpd)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
         $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,
-        $40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50)
+        $40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51)
       ON CONFLICT (day) DO UPDATE SET price=EXCLUDED.price, market_cap=EXCLUDED.market_cap`,
       [day, price, supplyBtc, marketCap, realizedCap,
        realizedPrice, div(marketCap, realizedCap), marketCap > 0 ? (marketCap - realizedCap) / marketCap : null,
@@ -148,7 +174,8 @@ export async function snapshotAndRollupDay(day, log) {
        realizedPrice !== null && transferredPrice !== null ? realizedPrice - transferredPrice : null,
        transferredPrice, div(marketCap, volUsd), Number(blk.txs), Number(f.vol), volUsd,
        aviv, trueMarketMean, sthNupl, lthNupl, sellSideRisk, rhodl, dormancy,
-       terminalPrice, supply1yPlus, div(sthProfit, sthV), div(lthProfit, lthV)]);
+       terminalPrice, supply1yPlus, div(sthProfit, sthV), div(lthProfit, lthV),
+       urpd ? JSON.stringify(urpd) : null]);
 
     // Window-derived metrics need history: compute in one follow-up UPDATE.
     await client.query(`

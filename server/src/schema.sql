@@ -154,7 +154,8 @@ CREATE TABLE IF NOT EXISTS metrics_daily (
   hashrate_60d       NUMERIC,      -- EH/s, 60d SMA (hash ribbons)
   supply_1y_plus_pct NUMERIC,      -- 0..1, share of supply dormant >= 1y
   sth_profit_pct     NUMERIC,      -- 0..1, share of STH supply in profit
-  lth_profit_pct     NUMERIC       -- 0..1, share of LTH supply in profit
+  lth_profit_pct     NUMERIC,      -- 0..1, share of LTH supply in profit
+  urpd               JSONB         -- cost-basis distribution {width, top, buckets:[{p,v}]}
 );
 -- Tier-1 metric additions (idempotent migration for databases created before them)
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS aviv NUMERIC;
@@ -171,6 +172,7 @@ ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS hashrate_60d NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS supply_1y_plus_pct NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS sth_profit_pct NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS lth_profit_pct NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS urpd JSONB;
 
 -- Seed persistent counters
 INSERT INTO chain_state(key, value) VALUES

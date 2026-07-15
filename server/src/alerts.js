@@ -42,7 +42,7 @@ export function alertsRouter(rateLimiter) {
       const m = bySlug[slug];
 
       if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'valid email required' });
-      if (!m || m.kind === 'stacked' || m.kind === 'multi') return res.status(400).json({ error: 'unknown or unsupported metric' });
+      if (!m || m.kind === 'stacked' || m.kind === 'multi' || m.kind === 'urpd') return res.status(400).json({ error: 'unknown or unsupported metric' });
       if (!['above', 'below'].includes(condition)) return res.status(400).json({ error: "condition must be 'above' or 'below'" });
       if (!Number.isFinite(threshold)) return res.status(400).json({ error: 'numeric threshold required' });
 

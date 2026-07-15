@@ -242,6 +242,46 @@ test('cohort supply in profit: STH breadth from the snapshot, LTH undefined pre-
   assert.equal(r2.lth_profit_pct, null);
 });
 
+test('URPD: supply bucketed by acquisition price, exact from the snapshot', async () => {
+  // D2: top close so far is $200 -> 100 bins of $2. The held 50 BTC (basis
+  // $100) lands at bin 50 (p=100); the 100 BTC created at $200 clamps into
+  // the top bin (p=198).
+  const r2 = (await pool.query('SELECT urpd FROM metrics_daily WHERE day=$1', [D2])).rows[0].urpd;
+  assert.equal(r2.top, 200);
+  assert.equal(r2.width, 2);
+  assert.deepEqual(r2.buckets, [{ p: 100, v: 50 }, { p: 198, v: 100 }]);
+
+  // D1: everything was acquired at the all-time-high close -> the top bin.
+  const r1 = (await pool.query('SELECT urpd FROM metrics_daily WHERE day=$1', [D1])).rows[0].urpd;
+  assert.equal(r1.width, 1);
+  assert.deepEqual(r1.buckets, [{ p: 99, v: 100 }], 'ATH-priced coins clamp into the top bin');
+});
+
+test('/api/urpd serves the latest distribution; series/cycles reject the slug', async () => {
+  const { app } = await import('../src/api.js');
+  const srv = app.listen(0);
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    const r = await (await fetch(base + '/api/urpd')).json();
+    assert.equal(r.slug, 'cost-basis-distribution');
+    assert.equal(r.day, D2, 'latest finalized day wins');
+    assert.equal(r.price, 200);
+    assert.deepEqual(r.buckets, [{ p: 100, v: 50 }, { p: 198, v: 100 }]);
+
+    const byDay = await (await fetch(base + `/api/urpd?day=${D1}`)).json();
+    assert.equal(byDay.day, D1);
+
+    assert.equal((await fetch(base + '/api/urpd?day=2030-01-01')).status, 404);
+    assert.equal((await fetch(base + '/api/series/cost-basis-distribution')).status, 400,
+      'the distribution is not a time series');
+    assert.equal((await fetch(base + '/api/cycles/cost-basis-distribution')).status, 400);
+
+    // /api/latest keeps the blob out of the dashboard payload.
+    const latest = await (await fetch(base + '/api/latest')).json();
+    assert.equal(latest.values['cost-basis-distribution'].value, null);
+  } finally { srv.close(); }
+});
+
 test('finalization is idempotent (re-running a day is a no-op)', async () => {
   const beforeRow = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D2])).rows[0];
   await snapshotAndRollupDay(D2, { info: () => {} });

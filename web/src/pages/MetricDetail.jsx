@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ResponsiveContainer, ComposedChart, Line, Area, AreaChart, XAxis, YAxis,
-  Tooltip, ReferenceArea, ReferenceLine, CartesianGrid,
+  ResponsiveContainer, ComposedChart, Line, Area, AreaChart, Bar, BarChart, Cell,
+  XAxis, YAxis, Tooltip, ReferenceArea, ReferenceLine, CartesianGrid,
 } from 'recharts';
 import { api, fmt, compact } from '../api.js';
 import AlertForm from '../components/AlertForm.jsx';
@@ -46,12 +46,21 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   const [view, setView] = useState('series'); // 'series' | 'cycles'
   const [data, setData] = useState(null);
   const [cycles, setCycles] = useState(null);
+  const [urpd, setUrpd] = useState(null);
   const [err, setErr] = useState(null);
   const [copied, setCopied] = useState(false);
+  // Scalar metrics get the full toolbar; 'stacked' and 'urpd' kinds render
+  // their own chart form with a reduced toolbar.
+  const scalar = metric.kind !== 'stacked' && metric.kind !== 'urpd';
 
   useEffect(() => { setView('series'); setCycles(null); }, [metric.slug]);
 
   useEffect(() => {
+    if (metric.kind === 'urpd') {
+      setUrpd(null); setErr(null);
+      api.urpd().then(setUrpd).catch(e => setErr(e.message));
+      return;
+    }
     if (view === 'cycles') {
       if (!cycles) {
         setErr(null);
@@ -115,6 +124,19 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   const waveKeys = metric.kind === 'stacked' && rows.length
     ? Object.keys(rows[rows.length - 1]).filter(k => k !== 'day') : [];
 
+  // URPD: fill the sparse server buckets to a dense, uniform 100-bin series so
+  // the category axis spaces linearly; classify each bin against the close.
+  const urpdBins = useMemo(() => {
+    if (!urpd) return [];
+    const byIdx = new Map(urpd.buckets.map(b => [Math.round(b.p / urpd.width), b.v]));
+    return Array.from({ length: 100 }, (_, i) => ({
+      p: Math.round(i * urpd.width * 100) / 100,
+      v: byIdx.get(i) ?? 0,
+    }));
+  }, [urpd]);
+  const spotBin = urpd ? Math.min(Math.floor(urpd.price / urpd.width), 99) : -1;
+  const urpdColor = (i) => (i < spotBin ? 'var(--aurora)' : i > spotBin ? 'var(--hot)' : 'var(--btc)');
+
   return (
     <div className="wrap">
       <div className="detail-hd">
@@ -124,30 +146,30 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
         </div>
         <h1>{metric.name}</h1>
         <p className="short">{metric.short}</p>
-        {metric.kind !== 'stacked' && (
+        {scalar && (
           <div className="bigval">{fmt(latestVal, metric.format, metric.unit)}</div>
         )}
       </div>
 
       <div className="toolbar">
-        {metric.kind !== 'stacked' && (
+        {scalar && (
           <div className="grp" role="group" aria-label="View">
             <button className={view === 'series' ? 'on' : ''} onClick={() => setView('series')}>Timeline</button>
             <button className={view === 'cycles' ? 'on' : ''} onClick={() => setView('cycles')}>Cycles</button>
           </div>
         )}
-        {view === 'series' && <div className="grp" role="group" aria-label="Time range">
+        {view === 'series' && metric.kind !== 'urpd' && <div className="grp" role="group" aria-label="Time range">
           {RANGES.map(r => (
             <button key={r.id} className={range === r.id ? 'on' : ''} onClick={() => setRange(r.id)}>{r.label}</button>
           ))}
         </div>}
-        {metric.kind !== 'stacked' && (
+        {scalar && (
           <div className="grp">
             <button className={!logScale ? 'on' : ''} onClick={() => setLogScale(false)}>Linear</button>
             <button className={logScale ? 'on' : ''} onClick={() => setLogScale(true)}>Log</button>
           </div>
         )}
-        {view === 'series' && metric.kind !== 'stacked' && metric.slug !== 'price'
+        {view === 'series' && scalar && metric.slug !== 'price'
           && !(metric.columns ?? []).includes('price') && (
           <div className="grp">
             <button className={showPrice ? 'on' : ''} onClick={() => setShowPrice(!showPrice)}>
@@ -197,7 +219,36 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
         {view === 'cycles' && !err && cycles && cycleRows.length === 0 && (
           <div className="loading">Not enough finalized history yet to compare cycles.</div>
         )}
-        {view === 'series' && !err && !data && <div className="loading">Loading series…</div>}
+        {metric.kind === 'urpd' && !err && !urpd && <div className="loading">Loading distribution…</div>}
+        {metric.kind === 'urpd' && !err && urpd && (
+          <>
+            <div className="chartwrap"><ResponsiveContainer width="100%" height="100%">
+              <BarChart data={urpdBins} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="18%">
+                <CartesianGrid stroke="var(--ink-line)" strokeOpacity={0.4} vertical={false} />
+                <XAxis dataKey="p" tickFormatter={(v) => '$' + compact(v)}
+                  tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={56} />
+                <YAxis tickFormatter={(v) => compact(v)}
+                  tick={{ fill: 'var(--text-faint)', fontSize: 11 }} width={64} />
+                <Tooltip contentStyle={{ background: '#0d1526', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
+                  cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                  labelFormatter={(p) => `Acquired $${compact(Number(p))} – $${compact(Number(p) + urpd.width)}`}
+                  formatter={(v) => [compact(Number(v)) + ' BTC', 'Supply']} />
+                <Bar dataKey="v" isAnimationActive={false}>
+                  {urpdBins.map((_, i) => (
+                    <Cell key={i} fill={urpdColor(i)} fillOpacity={i === spotBin ? 1 : 0.85} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer></div>
+            <div className="cycle-key">
+              <span><i style={{ background: 'var(--aurora)' }} />Acquired below the close (in profit)</span>
+              <span><i style={{ background: 'var(--hot)' }} />Acquired above the close (underwater)</span>
+              <span><i style={{ background: 'var(--btc)' }} />The close sits here: {fmt(urpd.price, 'usd')}</span>
+              <span className="cycle-note">as of {urpd.day}, the latest finalized UTC day · each bar is a ${compact(urpd.width)} price bin</span>
+            </div>
+          </>
+        )}
+        {view === 'series' && metric.kind !== 'urpd' && !err && !data && <div className="loading">Loading series…</div>}
         {view === 'series' && !err && data && rows.length === 0 && (
           <div className="loading">No finalized data for this range yet. The sync worker is still building history.</div>
         )}
@@ -273,7 +324,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
           <h4>How it's computed</h4>
           <p>{metric.method}</p>
         </div>
-        {metric.kind !== 'stacked' && features?.alertSignup && (
+        {scalar && features?.alertSignup && (
           <div className="pane pane-alert">
             <h4>Get the signal</h4>
             <AlertForm metric={metric} currentValue={latestVal} />

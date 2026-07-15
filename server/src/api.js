@@ -62,7 +62,7 @@ const HALVINGS = [
 app.get('/api/cycles/:slug', async (req, res) => {
   const m = bySlug[req.params.slug];
   if (!m) return res.status(404).json({ error: 'unknown metric' });
-  if (m.kind === 'stacked') return res.status(400).json({ error: 'cycle overlays are for line metrics' });
+  if (m.kind === 'stacked' || m.kind === 'urpd') return res.status(400).json({ error: 'cycle overlays are for line metrics' });
   const col = (Array.isArray(m.column) ? m.column[0] : m.column);
   if (!IDENT_RE.test(col)) return res.status(400).json({ error: 'bad metric' });
   try {
@@ -95,6 +95,23 @@ app.get('/api/cycles/:slug', async (req, res) => {
       epochs: epochs.filter(e => e.values.length > 0)
         .map(({ epoch, start, values }) => ({ epoch, start, values })),
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ---- Cost-basis distribution (URPD) ----------------------------------------
+// GET /api/urpd[?day=YYYY-MM-DD] -> supply bucketed by acquisition price for
+// one finalized day (default: the latest). Snapshotted daily; not a series.
+app.get('/api/urpd', async (req, res) => {
+  const day = DAY_RE.test(req.query.day ?? '') ? req.query.day : null;
+  try {
+    const r = await pool.query(
+      `SELECT day::text AS day, price::float AS price, urpd FROM metrics_daily
+       WHERE urpd IS NOT NULL ${day ? 'AND day = $1' : ''}
+       ORDER BY day DESC LIMIT 1`, day ? [day] : []);
+    if (!r.rows.length) return res.status(404).json({ error: 'no finalized distribution for that day yet' });
+    const row = r.rows[0];
+    cache(res);
+    res.json({ slug: 'cost-basis-distribution', day: row.day, price: row.price, ...row.urpd });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -147,7 +164,8 @@ app.get('/api/latest', async (_req, res) => {
     const spark = await pool.query(
       `SELECT * FROM metrics_daily ORDER BY day DESC LIMIT 30`);
     // Full-history percentile of the latest value per metric, one scan.
-    const numericCols = [...new Set(METRICS.filter(m => m.kind !== 'stacked').map(m => m.column))]
+    const nonScalar = (m) => m.kind === 'stacked' || m.kind === 'urpd';
+    const numericCols = [...new Set(METRICS.filter(m => !nonScalar(m)).map(m => m.column))]
       .filter(c => IDENT_RE.test(c));
     const pctSql = numericCols.map(c =>
       `CASE WHEN COUNT(${c}) > 1 THEN
@@ -159,10 +177,12 @@ app.get('/api/latest', async (_req, res) => {
     const values = {};
     for (const m of METRICS) {
       values[m.slug] = {
-        value: row[m.column] !== null ? Number(row[m.column]) || row[m.column] : null,
-        percentile: m.kind === 'stacked' ? undefined
+        // The urpd blob is fetched on demand via /api/urpd; keep /api/latest light.
+        value: m.kind === 'urpd' ? null
+          : row[m.column] !== null ? Number(row[m.column]) || row[m.column] : null,
+        percentile: nonScalar(m) ? undefined
           : (pct[m.column] === null || pct[m.column] === undefined ? null : Number(pct[m.column])),
-        spark: m.kind === 'stacked' ? undefined
+        spark: nonScalar(m) ? undefined
           : spark.rows.map(s => (s[m.column] === null ? null : Number(s[m.column]))).reverse(),
       };
     }
@@ -174,6 +194,7 @@ app.get('/api/latest', async (_req, res) => {
 app.get('/api/series/:slug', async (req, res) => {
   const m = bySlug[req.params.slug];
   if (!m) return res.status(404).json({ error: 'unknown metric' });
+  if (m.kind === 'urpd') return res.status(400).json({ error: 'not a time series; use /api/urpd' });
   const from = DAY_RE.test(req.query.from ?? '') ? req.query.from : '2010-01-01';
   const to = DAY_RE.test(req.query.to ?? '') ? req.query.to : '2100-01-01';
   const cols = (m.columns ?? [m.column]).filter(c => IDENT_RE.test(c));

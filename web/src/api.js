@@ -31,6 +31,7 @@ export const api = {
   explorerAddress: (a) => get('/api/explorer/address/' + encodeURIComponent(a)),
   explorerRecent: () => get('/api/explorer/blocks/recent'),
   cycles: (slug) => get(`/api/cycles/${slug}`),
+  urpd: (day) => get('/api/urpd' + (day ? `?day=${day}` : '')),
   spot: () => get('/api/spot'),
   createAlert: (body) => fetch(BASE + '/api/alerts', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
