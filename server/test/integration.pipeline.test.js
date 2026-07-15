@@ -187,6 +187,47 @@ test('day-2 finalization: MVRV, NUPL, SOPR, waves reflect the rotation', async (
   assert.ok(Math.abs(Number(waves['1d–1w']) - 50 / 150) < 1e-9);
 });
 
+test('tier-1 metrics: cointime, cohort NUPL, sell-side risk, dormancy, price models', async () => {
+  const r1 = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D1])).rows[0];
+  const r2 = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D2])).rows[0];
+
+  // Cointime at D2: liveliness = 56.25 / 250 = 0.225.
+  //   investor cap = realized cap − thermocap = 25,000 − (10,000 + 50.001×200) = 4,999.8
+  //   active cap   = 30,000 × 0.225 = 6,750
+  assert.ok(Math.abs(Number(r2.aviv) - 6750 / 4999.8) < 1e-9, `aviv=${r2.aviv}`);
+  assert.ok(Math.abs(Number(r2.true_market_mean) - 4999.8 / (0.225 * 150)) < 1e-6,
+    'TMM = investor cap / active supply (= price / AVIV)');
+  // At D1 realized cap equals thermocap exactly (all coins are fresh coinbases),
+  // so investor cap is 0 and cointime metrics are undefined.
+  assert.equal(r1.aviv, null);
+  assert.equal(r1.true_market_mean, null);
+
+  // Cohort NUPL: STH basis $166.67 vs $200 spot; no LTH supply exists yet.
+  assert.ok(Math.abs(Number(r2.sth_nupl) - (200 - 25_000 / 150) / 200) < 1e-9);
+  assert.equal(r2.lth_nupl, null);
+
+  // Sell-side risk: $5,000 realized profit, $0 loss, on a $25,000 realized cap.
+  assert.ok(Math.abs(Number(r2.sell_side_risk) - 0.2) < 1e-12);
+
+  // Dormancy: 56.25 coin-days destroyed over 50 BTC moved = 1.125 days.
+  assert.ok(Math.abs(Number(r2.dormancy) - 1.125) < 1e-9);
+
+  // Terminal price: transferred price (11,250 / 250 = 45) × 21.
+  assert.ok(Math.abs(Number(r2.terminal_price) - 945) < 1e-9);
+
+  // Delta price: realized cap − mean market cap ((10k + 30k)/2), per coin.
+  assert.ok(Math.abs(Number(r2.delta_price) - (25_000 - 20_000) / 150) < 1e-9);
+
+  // RHODL undefined until a 1y–2y band exists; nothing is a year old yet.
+  assert.equal(r2.rhodl, null);
+  assert.equal(Number(r2.supply_1y_plus_pct), 0);
+
+  // Hash ribbons: 30d/60d windows both cover exactly days 1–2 here.
+  const expectHr = (Number(r1.hashrate_ehs) + Number(r2.hashrate_ehs)) / 2;
+  assert.ok(Math.abs(Number(r2.hashrate_30d) - expectHr) < 1e-24);
+  assert.ok(Math.abs(Number(r2.hashrate_60d) - expectHr) < 1e-24);
+});
+
 test('finalization is idempotent (re-running a day is a no-op)', async () => {
   const beforeRow = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D2])).rows[0];
   await snapshotAndRollupDay(D2, { info: () => {} });

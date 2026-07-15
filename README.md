@@ -4,11 +4,12 @@ Institutional-grade Bitcoin on-chain analytics, computed directly from your own
 fully-validating Bitcoin Core node. No third-party data vendors between you and
 the ledger. Free, for the community.
 
-- **~40 metrics** across valuation (MVRV, MVRV-Z, Mayer, NUPL, realized/balanced
-  price), profit & loss (SOPR family, realized P&L, supply in profit), holder
-  behavior (CDD, liveliness, VDD, reserve risk, HODL waves), cohorts (STH/LTH
-  supply, cost basis, MVRV), mining (Puell, hashrate, thermocap), and network
-  (NVT, volume).
+- **~50 metrics** across valuation (MVRV, MVRV-Z, Mayer, NUPL, realized/
+  balanced price, AVIV & true market mean, terminal/delta price), profit & loss
+  (SOPR family, realized P&L, supply in profit, sell-side risk), holder
+  behavior (CDD, dormancy, liveliness, VDD, reserve risk, HODL waves, RHODL),
+  cohorts (STH/LTH supply, cost basis, MVRV, NUPL), mining (Puell, hashrate,
+  hash ribbons, thermocap), and network (NVT, volume).
 - **Exact history, not approximations** — the sync worker snapshots the full
   UTXO set at every UTC day boundary while replaying the chain, so set-level
   metrics (HODL waves, supply in profit, cohort cost bases) are the precise
@@ -305,7 +306,7 @@ cd web && npm ci && npm run dev     # http://localhost:5173
 
 ## Testing
 
-104 tests (86 server, 18 web). The server has unit suites (subsidy schedule,
+105 tests (87 server, 18 web). The server has unit suites (subsidy schedule,
 catalog↔schema integrity, RPC transport) that run without a database, plus
 Postgres-backed integration
 suites that replay a synthetic chain against mock providers and verify the

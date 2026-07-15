@@ -140,8 +140,33 @@ CREATE TABLE IF NOT EXISTS metrics_daily (
   nvt_signal         NUMERIC,
   tx_count           INTEGER,
   transfer_vol_btc   NUMERIC,
-  transfer_vol_usd   NUMERIC
+  transfer_vol_usd   NUMERIC,
+  aviv               NUMERIC,      -- active cap / investor cap (Cointime)
+  true_market_mean   NUMERIC,      -- USD; investor cap / active supply
+  sth_nupl           NUMERIC,
+  lth_nupl           NUMERIC,
+  sell_side_risk     NUMERIC,      -- (realized profit + loss) / realized cap
+  rhodl              NUMERIC,      -- RCap-HODL <1w band / 1y-2y band
+  dormancy           NUMERIC,      -- days; CDD / transfer volume
+  terminal_price     NUMERIC,      -- USD; 21 x transferred price
+  delta_price        NUMERIC,      -- USD; (realized cap - average cap) / supply
+  hashrate_30d       NUMERIC,      -- EH/s, 30d SMA (hash ribbons)
+  hashrate_60d       NUMERIC,      -- EH/s, 60d SMA (hash ribbons)
+  supply_1y_plus_pct NUMERIC       -- 0..1, share of supply dormant >= 1y
 );
+-- Tier-1 metric additions (idempotent migration for databases created before them)
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS aviv NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS true_market_mean NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS sth_nupl NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS lth_nupl NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS sell_side_risk NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS rhodl NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS dormancy NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS terminal_price NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS delta_price NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS hashrate_30d NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS hashrate_60d NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS supply_1y_plus_pct NUMERIC;
 
 -- Seed persistent counters
 INSERT INTO chain_state(key, value) VALUES

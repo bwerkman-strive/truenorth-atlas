@@ -93,6 +93,37 @@ export const METRICS = [
     explain: 'The headline valuation. On its own it says little; its value here is as the numerator against realized cap, thermocap, and on-chain volume in the ratios that follow.',
     method: 'Circulating supply (sum of all coinbase issuance actually claimed) × daily close.',
   },
+  {
+    slug: 'true-market-mean', column: 'true_market_mean', columns: ['true_market_mean', 'price'], name: 'True Market Mean', category: 'valuation', ...usd,
+    logDefault: true, overlayPrice: true,
+    short: 'The cost basis of active investors, with miner coins and dormant history discounted.',
+    explain: 'From the cointime framework: strip miner-earned capital out of realized cap (investor cap) and weight supply by how alive it actually is (liveliness), and what remains is the average price paid by investors who are actually in the market. Spot below the true market mean has marked deep-discount regimes; it is the centerline the AVIV ratio oscillates around.',
+    method: 'Investor cap ÷ active supply, where investor cap = realized cap − thermocap and active supply = liveliness × circulating supply. Equivalently, price ÷ AVIV.',
+  },
+  {
+    slug: 'aviv', column: 'aviv', name: 'AVIV Ratio', category: 'valuation', ...ratio,
+    zones: [
+      { from: 0, to: 0.6, label: 'Historically discounted', tone: 'cold' },
+      { from: 2.5, to: 6, label: 'Historically stretched', tone: 'hot' },
+    ],
+    short: 'Active-value to investor-value: price stretched against the true market mean.',
+    explain: 'AVIV compares what the active market is worth against the capital active investors actually committed, after removing miner-earned coins and long-dormant history that raw MVRV drags along. That focus makes it the sharper cycle oscillator: readings near historical lows have marked capitulation floors, and multi-year highs have marked distribution tops.',
+    method: 'Active cap ÷ investor cap, where active cap = liveliness × market cap and investor cap = realized cap − thermocap.',
+  },
+  {
+    slug: 'terminal-price', column: 'terminal_price', columns: ['terminal_price', 'price'], name: 'Terminal Price', category: 'valuation', ...usd,
+    logDefault: true, overlayPrice: true,
+    short: 'A cycle-top price model built from cumulative coin-day destruction.',
+    explain: 'Terminal price scales transferred price (the time-weighted value at which coins have historically moved) by 21, an empirical multiple that has capped every prior cycle peak. It is a ceiling model: most useful when spot approaches it, historically the zone where old-coin distribution overwhelms fresh demand.',
+    method: 'Transferred price × 21, where transferred price is cumulative USD coin-days destroyed ÷ cumulative coin-days created.',
+  },
+  {
+    slug: 'delta-price', column: 'delta_price', columns: ['delta_price', 'price'], name: 'Delta Price', category: 'valuation', ...usd,
+    logDefault: true, overlayPrice: true,
+    short: 'A bottom model: realized cap minus its own all-time average, per coin.',
+    explain: 'Delta price measures how far invested capital (realized cap) sits above the market\'s long-run average valuation. Because both inputs move slowly, it forms a deep floor that spot has only touched at generational bottoms; it is the lower band to terminal price\'s ceiling.',
+    method: '(Realized cap − average cap) ÷ circulating supply, where average cap is the cumulative mean of daily market cap since inception.',
+  },
 
   // ------------------------------------------------------------ profit & loss
   {
@@ -151,6 +182,12 @@ export const METRICS = [
     explain: 'Where SOPR gives a ratio, this gives magnitude: how many dollars of gain or pain were realized on-chain today. Spikes in realized loss identify capitulation events; sustained heavy realized profit identifies distribution into demand.',
     method: 'For every spent output: value × (spend-day price − creation-day price), summed by sign across each day.',
   },
+  {
+    slug: 'sell-side-risk', column: 'sell_side_risk', name: 'Sell-Side Risk Ratio', category: 'profitloss', ...pct,
+    short: 'Total realized profit and loss as a share of invested capital.',
+    explain: 'How much P&L, in either direction, are spenders actually locking in relative to the size of the market? High readings mean heavy repositioning: coins changing hands far from their cost basis, typical of tops and capitulations alike. Very low readings mean equilibrium: coins moving near break-even, the quiet that has preceded major moves.',
+    method: '(Realized profit + realized loss) ÷ realized cap, daily.',
+  },
 
   // ------------------------------------------------------------ behavior / lifespan
   {
@@ -194,6 +231,25 @@ export const METRICS = [
     explain: 'Weighting each age band by its USD cost basis shows where the capital, not just the coins, sits. A surge in young, expensive supply means new capital bearing high cost basis dominates: the classic late-cycle fingerprint.',
     method: 'Same age buckets, each UTXO weighted by value × creation-day price, as a share of realized cap.',
   },
+  {
+    slug: 'rhodl', column: 'rhodl', name: 'RHODL Ratio', category: 'behavior', ...num,
+    logDefault: true,
+    short: 'Capital in week-old coins versus capital in 1y–2y old coins.',
+    explain: 'RHODL pits the hottest capital (coins moved within the last week) against the cohort that bought roughly a cycle ago and held. When fresh, expensive supply dwarfs seasoned supply, the market is running on new money: the classic top signature. When the ratio collapses, speculation has drained out and holders dominate the ledger.',
+    method: 'Realized-cap share of supply younger than 1 week ÷ realized-cap share aged 1y–2y, from the daily UTXO snapshot.',
+  },
+  {
+    slug: 'dormancy', column: 'dormancy', name: 'Average Dormancy', category: 'behavior', format: 'number', unit: 'days',
+    short: 'Average age, in days, of each coin spent today.',
+    explain: 'Dormancy is CDD per unit of volume: it strips out how much moved and isolates how old it was. Rising dormancy into a rally means aged coins are taking exit liquidity; low, flat dormancy means churn is dominated by young coins while conviction holds.',
+    method: 'Coin days destroyed ÷ transfer volume in BTC, daily.',
+  },
+  {
+    slug: 'supply-1y-plus', column: 'supply_1y_plus_pct', name: 'Supply Last Active 1y+', category: 'behavior', ...pct,
+    short: 'Share of all coins that have not moved in at least one year.',
+    explain: 'The headline dormancy statistic. This share climbs through bear markets as coins age into strong hands, peaking near cycle bottoms; it falls when rallies finally tempt old coins back into circulation. All-time highs alongside depressed prices describe maximum holder conviction.',
+    method: 'Sum of all HODL-wave bands aged one year or older, from the daily UTXO snapshot.',
+  },
 
   // ------------------------------------------------------------ cohorts
   {
@@ -233,6 +289,26 @@ export const METRICS = [
     short: 'Price relative to long-term holder cost basis.',
     explain: 'The cycle in one line. LTH-MVRV below 1 has marked every macro bottom; readings above ~3.5 show veterans sitting on multiples that have historically triggered distribution into every cycle top.',
     method: 'Price ÷ LTH cost basis.',
+  },
+  {
+    slug: 'sth-nupl', column: 'sth_nupl', name: 'STH-NUPL', category: 'cohorts', ...ratio,
+    zones: [
+      { from: -1, to: 0, label: 'Cohort underwater', tone: 'cold' },
+      { from: 0.4, to: 1, label: 'Cohort euphoria', tone: 'hot' },
+    ],
+    short: 'Unrealized profit or loss of coins younger than 155 days.',
+    explain: 'Short-term holders are the market\'s marginal sellers, and this is their aggregate paper P&L. Crossings through zero are the market\'s recovery and breakdown lines: above zero the recent buyer is whole and dips get bought; deeply negative readings mean recent buyers are trapped, the precondition for both capitulation and bottom formation.',
+    method: '(Price − STH cost basis) ÷ price. Equivalent to 1 − 1/STH-MVRV.',
+  },
+  {
+    slug: 'lth-nupl', column: 'lth_nupl', name: 'LTH-NUPL', category: 'cohorts', ...ratio,
+    zones: [
+      { from: -1, to: 0, label: 'Veterans underwater', tone: 'cold' },
+      { from: 0.75, to: 1, label: 'Euphoria', tone: 'hot' },
+    ],
+    short: 'Unrealized profit or loss of coins held longer than 155 days.',
+    explain: 'The long-term cohort\'s paper P&L moves slowly, which makes its extremes reliable: readings above 0.75 mean veterans sit on enormous unrealized gains, historically preceding distribution. Negative readings, where even the most patient capital is underwater, have marked the terminal phase of every bear market.',
+    method: '(Price − LTH cost basis) ÷ price. Equivalent to 1 − 1/LTH-MVRV.',
   },
 
   // ------------------------------------------------------------ mining
@@ -279,6 +355,14 @@ export const METRICS = [
     short: 'Cumulative USD ever paid to miners since genesis.',
     explain: 'The aggregate capital that has purchased Bitcoin\'s security over its entire life: a foundation-level valuation anchor that only ever rises.',
     method: 'Running sum of daily miner revenue in USD.',
+  },
+  {
+    slug: 'hash-ribbons', columns: ['hashrate_30d', 'hashrate_60d'], column: 'hashrate_30d',
+    name: 'Hash Ribbons', category: 'mining', format: 'number', unit: 'EH/s',
+    logDefault: true,
+    short: 'Fast and slow hashrate averages: miner capitulation and recovery.',
+    explain: 'When the 30-day hashrate average drops below the 60-day, miners are switching machines off; that capitulation has historically clustered near price bottoms, and the recovery cross back above has been one of the strongest long-entry signals across cycles. The ribbon turns hashrate, a security statistic, into a miner-stress indicator.',
+    method: '30-day and 60-day simple moving averages of the difficulty-implied hashrate.',
   },
 
   // ------------------------------------------------------------ network

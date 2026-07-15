@@ -100,6 +100,27 @@ export async function snapshotAndRollupDay(day, log) {
     const volUsd = Number(f.vol) * price;
     const diff = blk.diff !== null ? Number(blk.diff) : null;
 
+    // Cointime economics: investor cap strips the miner-earned share out of
+    // realized cap; active cap discounts market cap by liveliness (the share
+    // of all coin-days ever destroyed). AVIV is their ratio; true market mean
+    // is the active-investor cost basis (= price / AVIV).
+    const investorCap = realizedCap - thermocap;
+    const activeCap = marketCap * liveliness;
+    const aviv = investorCap > 0 && activeCap > 0 ? activeCap / investorCap : null;
+    const trueMarketMean = aviv !== null ? price / aviv : null;
+
+    const sthNupl = price > 0 && sthCost !== null ? (price - sthCost) / price : null;
+    const lthNupl = price > 0 && lthCost !== null ? (price - lthCost) / price : null;
+    const sellSideRisk = realizedCap > 0 ? (Number(f.rp) + Number(f.rl)) / realizedCap : null;
+    const dormancy = Number(f.vol) > 0 ? Number(f.cdd) / Number(f.vol) : null;
+    const terminalPrice = transferredPrice !== null ? transferredPrice * 21 : null;
+    // RHODL: realized-cap share held < 1 week vs the 1y–2y band (both already
+    // normalized shares of realized cap, so the supply factors cancel).
+    const rhodlNum = rcWaves['24h'] + rcWaves['1d–1w'];
+    const rhodl = rcWaves['1y–2y'] > 0 ? rhodlNum / rcWaves['1y–2y'] : null;
+    const supply1yPlus = ['1y–2y', '2y–3y', '3y–5y', '5y–7y', '7y–10y', '10y+']
+      .reduce((a, k) => a + waves[k], 0);
+
     await client.query(`
       INSERT INTO metrics_daily (day, price, circulating_supply, market_cap, realized_cap,
         realized_price, mvrv, nupl, supply_profit_pct,
@@ -107,9 +128,12 @@ export async function snapshotAndRollupDay(day, log) {
         cdd, liveliness, reserve_risk, hodl_waves, rc_hodl_waves,
         sth_supply, lth_supply, sth_cost_basis, lth_cost_basis, sth_mvrv, lth_mvrv,
         miner_rev_usd, fees_pct_rev, hashrate_ehs, difficulty, thermocap, thermocap_multiple,
-        balanced_price, transferred_price, nvt, tx_count, transfer_vol_btc, transfer_vol_usd)
+        balanced_price, transferred_price, nvt, tx_count, transfer_vol_btc, transfer_vol_usd,
+        aviv, true_market_mean, sth_nupl, lth_nupl, sell_side_risk, rhodl, dormancy,
+        terminal_price, supply_1y_plus_pct)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
-        $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39)
+        $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,
+        $40,$41,$42,$43,$44,$45,$46,$47,$48)
       ON CONFLICT (day) DO UPDATE SET price=EXCLUDED.price, market_cap=EXCLUDED.market_cap`,
       [day, price, supplyBtc, marketCap, realizedCap,
        realizedPrice, div(marketCap, realizedCap), marketCap > 0 ? (marketCap - realizedCap) / marketCap : null,
@@ -122,7 +146,9 @@ export async function snapshotAndRollupDay(day, log) {
        minerRev, Number(blk.minted) > 0 ? Number(blk.fees) / Number(blk.minted) : null,
        diff !== null ? diff * 2 ** 32 / 600 / 1e18 : null, diff, thermocap, div(marketCap, thermocap),
        realizedPrice !== null && transferredPrice !== null ? realizedPrice - transferredPrice : null,
-       transferredPrice, div(marketCap, volUsd), Number(blk.txs), Number(f.vol), volUsd]);
+       transferredPrice, div(marketCap, volUsd), Number(blk.txs), Number(f.vol), volUsd,
+       aviv, trueMarketMean, sthNupl, lthNupl, sellSideRisk, rhodl, dormancy,
+       terminalPrice, supply1yPlus]);
 
     // Window-derived metrics need history: compute in one follow-up UPDATE.
     await client.query(`
@@ -132,7 +158,10 @@ export async function snapshotAndRollupDay(day, log) {
         vdd_multiple = CASE WHEN w.vdd365 > 0 THEN w.vdd30 / w.vdd365 END,
         mayer = CASE WHEN w.p200 > 0 THEN m.price / w.p200 END,
         puell = CASE WHEN w.rev365 > 0 THEN m.miner_rev_usd / w.rev365 END,
-        nvt_signal = CASE WHEN w.vol90 > 0 THEN m.market_cap / w.vol90 END
+        nvt_signal = CASE WHEN w.vol90 > 0 THEN m.market_cap / w.vol90 END,
+        delta_price = CASE WHEN m.circulating_supply > 0 THEN (m.realized_cap - w.avgcap) / m.circulating_supply END,
+        hashrate_30d = w.hr30,
+        hashrate_60d = w.hr60
       FROM
         (SELECT COALESCE(STDDEV_POP(market_cap),0) sd FROM metrics_daily WHERE day <= $1) s,
         (SELECT
@@ -143,7 +172,10 @@ export async function snapshotAndRollupDay(day, log) {
               WHERE day > $1::date - 365 AND day <= $1 GROUP BY day) t) vdd365,
            (SELECT AVG(close_usd) FROM prices WHERE day > $1::date - 200 AND day <= $1) p200,
            (SELECT AVG(miner_rev_usd) FROM metrics_daily WHERE day > $1::date - 365 AND day <= $1) rev365,
-           (SELECT AVG(transfer_vol_usd) FROM metrics_daily WHERE day > $1::date - 90 AND day <= $1) vol90
+           (SELECT AVG(transfer_vol_usd) FROM metrics_daily WHERE day > $1::date - 90 AND day <= $1) vol90,
+           (SELECT AVG(market_cap) FROM metrics_daily WHERE day <= $1) avgcap,
+           (SELECT AVG(hashrate_ehs) FROM metrics_daily WHERE day > $1::date - 30 AND day <= $1) hr30,
+           (SELECT AVG(hashrate_ehs) FROM metrics_daily WHERE day > $1::date - 60 AND day <= $1) hr60
         ) w
       WHERE m.day = $1`, [day]);
 
