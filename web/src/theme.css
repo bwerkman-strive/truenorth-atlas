@@ -168,6 +168,9 @@ button { font-family: inherit; }
 .xspent a:hover { text-decoration: underline; }
 .xunspent { color: var(--aurora); font-style: normal; font-size: 11.5px; }
 .xusd { color: var(--text-dim); font-size: 0.6em; font-weight: 400; }
+.xpnl { font-size: 14px; font-family: var(--font-data); margin-top: 4px; }
+.xpnl.up, .xpnl-inline.up { color: var(--aurora); }
+.xpnl.down, .xpnl-inline.down { color: var(--hot); }
 .xh-hash { font-size: clamp(17px, 2.6vw, 24px) !important; }
 
 .xtable { border: 1px solid var(--ink-line); border-radius: 12px; overflow: hidden; margin: 10px 0 18px; }

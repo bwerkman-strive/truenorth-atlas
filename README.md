@@ -187,7 +187,10 @@ Free for everyone, rate-limited per IP (`PUBLIC_RATE_LIMIT_PER_MIN`, default
 
 **Data model.** Address balances and UTXO listings come from the app's own
 UTXO set — exact from genesis, because the sync worker records the address on
-every output. Block summaries come from the local index. Full transaction
+every output. And because every output is also keyed to the USD close of its
+creation day, address pages show something no mainstream explorer has: the
+address's **on-chain cost basis and unrealized P&L**, per UTXO and in total —
+the same basis the realized-cap engine uses. Block summaries come from the local index. Full transaction
 detail and block tx listings are RPC-enriched when the API service can reach
 your node; notably, **transaction lookup works without `txindex`** — the app
 learns the containing block from its own UTXO table and fetches by blockhash.
@@ -302,7 +305,7 @@ cd web && npm ci && npm run dev     # http://localhost:5173
 
 ## Testing
 
-103 tests (85 server, 18 web). The server has unit suites (subsidy schedule,
+104 tests (86 server, 18 web). The server has unit suites (subsidy schedule,
 catalog↔schema integrity, RPC transport) that run without a database, plus
 Postgres-backed integration
 suites that replay a synthetic chain against mock providers and verify the

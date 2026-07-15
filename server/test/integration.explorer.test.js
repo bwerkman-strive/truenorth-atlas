@@ -148,6 +148,33 @@ test('unknown-but-valid address returns a clean zero, not a 404', async () => {
   assert.equal(status, 200);
   assert.equal(body.balance_sat, 0);
   assert.deepEqual(body.utxos, []);
+  assert.equal(body.cost_basis_usd, 0);
+  assert.equal(body.avg_cost_usd, null);
+  assert.equal(body.unrealized_pnl_pct, null, 'no basis, no percentage');
+});
+
+test('address cost basis and unrealized P&L from per-UTXO creation prices', async () => {
+  // Flat market: everything was created at the $100 close, so basis = value.
+  const flat = (await getJson(`/api/explorer/address/${ADDR1}`)).body;
+  assert.equal(flat.price_usd, 100);
+  assert.equal(flat.cost_basis_usd, 8000, '80 BTC acquired at $100');
+  assert.equal(flat.avg_cost_usd, 100);
+  assert.equal(flat.unrealized_pnl_usd, 0);
+  assert.equal(flat.unrealized_pnl_pct, 0);
+  assert.equal(flat.utxos[0].created_price, 100);
+
+  // The market moves: a newer close appears, the basis stays put.
+  await pool.query(`INSERT INTO prices (day, close_usd) VALUES ('2024-06-02', 150)`);
+  try {
+    const up = (await getJson(`/api/explorer/address/${ADDR1}`)).body;
+    assert.equal(up.price_usd, 150);
+    assert.equal(up.balance_usd, 12000);
+    assert.equal(up.cost_basis_usd, 8000, 'basis is anchored to creation days');
+    assert.equal(up.unrealized_pnl_usd, 4000);
+    assert.equal(up.unrealized_pnl_pct, 50);
+  } finally {
+    await pool.query(`DELETE FROM prices WHERE day = '2024-06-02'`);
+  }
 });
 
 test('block lookup by height and by hash, RPC-enriched with full txids', async () => {

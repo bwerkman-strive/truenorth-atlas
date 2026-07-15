@@ -264,26 +264,40 @@ export async function getTx(txid) {
 export async function getAddress(addr) {
   const [bal, utxoR, priceR] = await Promise.all([
     pool.query(
-      `SELECT COALESCE(SUM(value_sat),0)::bigint AS sat, COUNT(*)::int AS n
+      `SELECT COALESCE(SUM(value_sat),0)::bigint AS sat, COUNT(*)::int AS n,
+              COALESCE(SUM(value_sat / 1e8 * created_price), 0)::float AS basis
        FROM utxos WHERE address = $1 AND spent_height IS NULL`, [addr]),
     pool.query(
       `SELECT encode(txid,'hex') AS txid, vout, value_sat::bigint AS value_sat,
-              created_height, EXTRACT(EPOCH FROM created_time)::bigint AS created_time
+              created_height, EXTRACT(EPOCH FROM created_time)::bigint AS created_time,
+              created_price::float AS created_price
        FROM utxos WHERE address = $1 AND spent_height IS NULL
        ORDER BY created_height DESC LIMIT 500`, [addr]),
     pool.query(`SELECT close_usd::float p FROM prices ORDER BY day DESC LIMIT 1`),
   ]);
   const sat = Number(bal.rows[0].sat);
+  const btcBal = sat / 1e8;
   const px = priceR.rows[0]?.p ?? null;
+  // On-chain cost basis: every UTXO is keyed to the USD close of its creation
+  // day (utxos.created_price) — the same basis the realized-cap engine uses.
+  // Pre-market outputs carry a deliberate zero basis (see invariant #2).
+  const basis = Number(bal.rows[0].basis);
+  const valueUsd = px != null ? btcBal * px : null;
   return {
     address: addr,
     balance_sat: sat,
-    balance_btc: sat / 1e8,
-    balance_usd: px != null ? (sat / 1e8) * px : null,
+    balance_btc: btcBal,
+    balance_usd: valueUsd,
+    price_usd: px,
+    cost_basis_usd: basis,
+    avg_cost_usd: sat > 0 ? basis / btcBal : null,
+    unrealized_pnl_usd: valueUsd != null ? valueUsd - basis : null,
+    unrealized_pnl_pct: valueUsd != null && basis > 0 ? ((valueUsd - basis) / basis) * 100 : null,
     utxo_count: bal.rows[0].n,
     utxos: utxoR.rows.map(u => ({
       txid: u.txid, vout: u.vout, value_sat: Number(u.value_sat),
       height: u.created_height, time: Number(u.created_time),
+      created_price: u.created_price,
     })),
     note: 'Balance and UTXOs reflect the synced chain tip. Spent-output history is retained only for recent blocks.',
   };

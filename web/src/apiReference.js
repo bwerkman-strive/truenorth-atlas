@@ -157,13 +157,18 @@ export const API_ENDPOINTS = [
     method: 'GET',
     path: '/v1/address/{address}',
     title: 'Address balance & UTXOs',
-    desc: 'Confirmed balance and live unspent outputs, exact from genesis (the sync worker records the address of every output it ingests). USD value uses the latest daily close. Legacy (1…), P2SH (3…), SegWit (bc1q…), and Taproot (bc1p…) formats accepted.',
+    desc: 'Confirmed balance, live unspent outputs, and the address\'s on-chain cost basis, exact from genesis (the sync worker records the address and creation-day USD close of every output it ingests). Each UTXO is valued at the daily close of the day it was created; the sum is the cost basis, and unrealized P&L compares it to today\'s value at the latest close. Legacy (1…), P2SH (3…), SegWit (bc1q…), and Taproot (bc1p…) formats accepted.',
     example: '/v1/address/bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq',
     response: {
       address: 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq',
       balance_sat: 8000010000,
       balance_btc: 80.0001,
       balance_usd: 8544106.84,
+      price_usd: 106800.0,
+      cost_basis_usd: 5136006.42,
+      avg_cost_usd: 64199.92,
+      unrealized_pnl_usd: 3408100.42,
+      unrealized_pnl_pct: 66.36,
       utxo_count: 2,
       utxos: [
         {
@@ -172,11 +177,12 @@ export const API_ENDPOINTS = [
           value_sat: 2999990000,
           height: 840002,
           time: 1713573000,
+          created_price: 63841.12,
         },
       ],
       note: 'Balance and UTXOs reflect the synced chain tip. Spent-output history is retained only for recent blocks.',
     },
-    notes: 'Valid-but-unused addresses return a clean zero balance (200), never a 404. UTXO list caps at 500 entries; "utxo_count" is always the full count.',
+    notes: 'Valid-but-unused addresses return a clean zero balance (200), never a 404. UTXO list caps at 500 entries; "utxo_count" is always the full count. "created_price" is the USD daily close of the UTXO\'s creation day (0 for pre-market coins, which deliberately carry a zero basis); "unrealized_pnl_pct" is null when the basis is zero.',
   },
   {
     method: 'GET',

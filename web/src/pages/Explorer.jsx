@@ -339,6 +339,10 @@ function AddressView({ addr }) {
 
   if (err) return <div className="wrap"><div className="err">Lookup failed: {err}</div></div>;
   if (!a) return <div className="wrap"><div className="loading">Loading address…</div></div>;
+  const hasBasis = a.cost_basis_usd > 0;
+  const pnl = a.unrealized_pnl_usd;
+  const utxoPnl = (u) => (a.price_usd != null && u.created_price != null
+    ? (u.value_sat / 1e8) * (a.price_usd - u.created_price) : null);
   return (
     <div className="wrap">
       <div className="detail-hd">
@@ -347,25 +351,52 @@ function AddressView({ addr }) {
         <div className="bigval">{btc(a.balance_btc)}
           {a.balance_usd !== null && <span className="xusd"> ≈ {fmt(a.balance_usd, 'usd')}</span>}
         </div>
+        {hasBasis && pnl != null && (
+          <div className={pnl >= 0 ? 'xpnl up' : 'xpnl down'}>
+            {pnl >= 0 ? '+' : '−'}{fmt(Math.abs(pnl), 'usd')}
+            {a.unrealized_pnl_pct != null && ` (${pnl >= 0 ? '+' : '−'}${Math.abs(a.unrealized_pnl_pct).toFixed(1)}%)`} unrealized
+          </div>
+        )}
       </div>
       <div className="xcard">
         <Row label="Address" monoValue>{a.address}</Row>
         <Row label="Confirmed balance">{btc(a.balance_btc)}</Row>
         <Row label="Unspent outputs">{a.utxo_count.toLocaleString()}</Row>
+        {hasBasis && <>
+          <Row label="Cost basis">{fmt(a.cost_basis_usd, 'usd')}
+            {a.avg_cost_usd != null && <span className="xmeta"> avg {fmt(a.avg_cost_usd, 'usd')} / BTC</span>}
+          </Row>
+          {pnl != null &&
+            <Row label="Unrealized P&L">
+              <span className={pnl >= 0 ? 'xpnl-inline up' : 'xpnl-inline down'}>
+                {pnl >= 0 ? '+' : '−'}{fmt(Math.abs(pnl), 'usd')}
+              </span>
+            </Row>}
+        </>}
       </div>
       <div className="sec"><h2>UTXOs <span>{a.utxos.length < a.utxo_count ? `showing ${a.utxos.length} of ${a.utxo_count}` : ''}</span></h2></div>
       <div className="xcard">
         {a.utxos.length === 0 && <div className="xrow"><div className="xval">No unspent outputs.</div></div>}
-        {a.utxos.map(u => (
-          <div className="xrow" key={u.txid + ':' + u.vout}>
-            <div className="xval">
-              <span className="mono"><a href={`#/tx/${u.txid}`}>{mid(u.txid, 10)}</a>:{u.vout}</span>
-              <span className="xamt">{sat2btc(u.value_sat)} · block {u.height.toLocaleString()}</span>
+        {a.utxos.map(u => {
+          const p = utxoPnl(u);
+          return (
+            <div className="xrow" key={u.txid + ':' + u.vout}>
+              <div className="xval">
+                <span className="mono"><a href={`#/tx/${u.txid}`}>{mid(u.txid, 10)}</a>:{u.vout}</span>
+                <span className="xamt">{sat2btc(u.value_sat)} · block {u.height.toLocaleString()}
+                  {u.created_price != null && (u.created_price === 0
+                    ? <em className="xtype">pre-market</em>
+                    : <> · @ {fmt(u.created_price, 'usd')}</>)}
+                  {p != null && u.created_price > 0 && (
+                    <em className={p >= 0 ? 'xunspent' : 'xspent'}> {p >= 0 ? '+' : '−'}{fmt(Math.abs(p), 'usd')}</em>
+                  )}
+                </span>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
-      <div className="syncnote">{a.note}</div>
+      <div className="syncnote">{a.note} UTXOs are marked with the USD close of their creation day, the address's on-chain cost basis.</div>
     </div>
   );
 }
