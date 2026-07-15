@@ -35,12 +35,6 @@ export default function Overview({ catalog, latest, onOpen }) {
       <div className="hero wrap">
         <p className="eyebrow">Navigating the Bitcoin Ledger</p>
         <h1>Atlas <span className="h1-sub">/ Bitcoin On-Chain Analytics</span></h1>
-        <p className="dial-legend">
-          Each card's <strong>bearing dial</strong> shows where today's reading sits in the
-          metric's entire history: <span className="lg-cold">blue</span> = historically
-          depressed, <span className="lg-mid">green</span> = mid-range,{' '}
-          <span className="lg-hot">orange</span> = historically stretched.
-        </p>
       </div>
 
       <nav className="catnav wrap" aria-label="Metric categories">

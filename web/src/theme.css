@@ -245,11 +245,6 @@ button { font-family: inherit; }
 
 /* ---------- review polish ---------- */
 .xsub-search { padding-top: 16px; }
-.dial-legend { color: var(--text-faint) !important; font-size: 12.5px !important; max-width: 720px; margin-top: 10px !important; }
-.dial-legend strong { color: var(--text-dim); }
-.lg-cold { color: var(--cold); }
-.lg-mid { color: var(--aurora); }
-.lg-hot { color: var(--hot); }
 
 /* ---------- Atlas brand ---------- */
 .h1-sub { font-style: italic; color: var(--orange); font-weight: 400; font-size: 0.7em; letter-spacing: 0; }
@@ -433,7 +428,7 @@ body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-ins
 
 /* --- Print: charts + methodology, no chrome --- */
 @media print {
-  .hdr, .foot, .toolbar, .catnav, .xsearch, .alert-form, .sub-form, .dial-legend { display: none !important; }
+  .hdr, .foot, .toolbar, .catnav, .xsearch, .alert-form, .sub-form { display: none !important; }
   body { background: #fff; color: #111; }
 }
 @media (max-width: 380px) {
