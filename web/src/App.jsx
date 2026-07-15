@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { api, fmt, isEmbed } from './api.js';
+import { api, fmt, fmtDay, isEmbed } from './api.js';
 import Overview from './pages/Overview.jsx';
 import MetricDetail from './pages/MetricDetail.jsx';
 import Explorer from './pages/Explorer.jsx';
@@ -103,7 +103,7 @@ export default function App() {
             </nav>
             <div className="hdr-status">
               <span className="hide-sm" title={status?.latestMetricsDay
-                ? `Latest finalized day: ${status.latestMetricsDay}` : undefined}>
+                ? `Latest finalized day: ${fmtDay(status.latestMetricsDay)}` : undefined}>
                 <span className={'dot' + (stale ? ' stale' : '')} />
                 {status?.syncedHeight
                   ? `block ${Number(status.syncedHeight).toLocaleString()}`

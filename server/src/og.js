@@ -27,6 +27,9 @@ const TTL = 60 * 60 * 1000;
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+// Display dates as MM/DD/YYYY (ISO "YYYY-MM-DD" in, US format out).
+const usDay = (d) => (/^\d{4}-\d{2}-\d{2}/.test(d ?? '') ? `${d.slice(5, 7)}/${d.slice(8, 10)}/${d.slice(0, 4)}` : d);
+
 function fmtValue(v, format, unit) {
   if (v === null || v === undefined) return '—';
   const n = Number(v);
@@ -137,7 +140,7 @@ export async function buildCardSvg(slug) {
   ${!path ? `<text x="600" y="400" text-anchor="middle" font-family="sans-serif" font-size="26" fill="${SLATE}">Syncing history from a fully-validating node…</text>` : ''}
 
   <line x1="80" y1="560" x2="1120" y2="560" stroke="${LINE}" stroke-width="2"/>
-  <text x="80" y="596" font-family="sans-serif" font-size="20" fill="${SLATE}">${esc(latest.d ? `As of ${latest.d} UTC · computed from a fully-validating Bitcoin node` : 'Computed from a fully-validating Bitcoin node')}</text>
+  <text x="80" y="596" font-family="sans-serif" font-size="20" fill="${SLATE}">${esc(latest.d ? `As of ${usDay(latest.d)} UTC · computed from a fully-validating Bitcoin node` : 'Computed from a fully-validating Bitcoin node')}</text>
   <text x="1120" y="596" text-anchor="end" font-family="sans-serif" font-weight="600" font-size="20" fill="${SLATE}">${esc(config.publicSiteUrl.replace(/^https?:\/\//, ''))}</text>
 </svg>`;
 }

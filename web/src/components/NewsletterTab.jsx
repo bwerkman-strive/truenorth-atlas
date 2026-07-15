@@ -2,7 +2,11 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 
-const when = (t) => (t ? new Date(t).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '—');
+const when = (t) => {
+  if (!t) return '—';
+  const iso = new Date(t).toISOString();
+  return `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)} ${iso.slice(11, 16)} UTC`;
+};
 const STATUS_TONE = { draft: 'xmeta', scheduled: 'xunspent', sending: 'xunspent', sent: 'xmeta' };
 
 export default function NewsletterTab({ token, catalog }) {

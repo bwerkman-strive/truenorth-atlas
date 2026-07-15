@@ -9,7 +9,11 @@ import { api, fmt, compact } from '../api.js';
 
 const btc = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 8 }) + ' BTC');
 const sat2btc = (s) => btc(Number(s) / 1e8);
-const when = (t) => (t ? new Date(t * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : '—');
+const when = (t) => {
+  if (!t) return '—';
+  const iso = new Date(t * 1000).toISOString();
+  return `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)} ${iso.slice(11, 19)} UTC`;
+};
 const mid = (s, n = 12) => (s && s.length > n * 2 + 3 ? s.slice(0, n) + '…' + s.slice(-n) : s);
 const blkSize = (bytes) => (bytes == null ? '—'
   : bytes >= 1e6 ? (bytes / 1e6).toFixed(2) + ' MB'

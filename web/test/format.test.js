@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fmt, compact } from '../src/format.js';
+import { fmt, compact, fmtDay } from '../src/format.js';
 
 test('null/undefined/NaN render as em-dash (pre-sync state)', () => {
   assert.equal(fmt(null, 'usd'), '—');
@@ -56,4 +56,17 @@ test('compact edge behavior', () => {
   assert.equal(compact(-3_200_000), '-3.20M');
   assert.equal(compact(999), '999');
   assert.equal(compact(1000), '1.0K');
+});
+
+test('fmtDay renders ISO days as MM/DD/YYYY', () => {
+  assert.equal(fmtDay('2026-07-14'), '07/14/2026');
+  assert.equal(fmtDay('2009-01-03'), '01/03/2009');
+  assert.equal(fmtDay('2026-07-14T00:00:00Z'), '07/14/2026'); // full ISO stamps too
+});
+
+test('fmtDay passes through non-ISO input untouched', () => {
+  assert.equal(fmtDay(null), '—');
+  assert.equal(fmtDay(undefined), '—');
+  assert.equal(fmtDay(''), '—');
+  assert.equal(fmtDay('pending'), 'pending');
 });

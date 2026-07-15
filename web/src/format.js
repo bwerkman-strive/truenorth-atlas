@@ -28,3 +28,10 @@ export function compact(value) {
   if (a >= 1e3) return (v / 1e3).toFixed(1) + 'K';
   return a >= 10 ? v.toFixed(0) : v.toFixed(2);
 }
+
+// Display dates as MM/DD/YYYY. Accepts an ISO day ("YYYY-MM-DD") or any
+// string starting with one; anything else passes through untouched.
+export function fmtDay(day) {
+  const m = String(day ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[2]}/${m[3]}/${m[1]}` : (day || '—');
+}

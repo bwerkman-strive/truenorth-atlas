@@ -68,7 +68,7 @@ export function subscribeRouter(rateLimiter) {
           eyebrow: 'Stay on course',
           title: 'Confirm your subscription',
           preheader: 'One click and the signal starts arriving.',
-          bodyHtml: `<p style="margin:0 0 18px;line-height:1.7;color:#c6d2e4">Confirm and you'll
+          bodyHtml: `<p style="margin:0 0 18px;line-height:1.7;color:#d5cfc1">Confirm and you'll
             receive the Atlas newsletter — chart-driven reads on where the Bitcoin ledger stands,
             straight from a fully-validating node. No spam, unsubscribe any time.</p>`,
           cta: { label: 'Confirm subscription', url: `${apiOrigin}/api/subscribe/confirm?token=${confirmT}` },

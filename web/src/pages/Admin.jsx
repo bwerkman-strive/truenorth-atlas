@@ -12,7 +12,11 @@ import { api } from '../api.js';
 import { API_AUTH_DOC, API_ENDPOINTS } from '../apiReference.js';
 import NewsletterTab from '../components/NewsletterTab.jsx';
 
-const when = (t) => (t ? new Date(t).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '—');
+const when = (t) => {
+  if (!t) return '—';
+  const iso = new Date(t).toISOString();
+  return `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)} ${iso.slice(11, 16)} UTC`;
+};
 
 function Json({ value }) {
   return <pre className="xjson">{JSON.stringify(value, null, 2)}</pre>;
@@ -218,7 +222,10 @@ function EmailLogTab({ token }) {
   useEffect(() => { refresh(kind); }, [token, kind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const KINDS = ['', 'alert_confirm', 'alert_fire', 'subscribe_confirm', 'newsletter', 'newsletter_test'];
-  const whenTs = (t) => new Date(t).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+  const whenTs = (t) => {
+    const iso = new Date(t).toISOString();
+    return `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)} ${iso.slice(11, 19)} UTC`;
+  };
 
   return (
     <>

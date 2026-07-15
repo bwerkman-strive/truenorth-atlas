@@ -3,7 +3,7 @@ import {
   ResponsiveContainer, ComposedChart, Line, Area, AreaChart, Bar, BarChart, Cell,
   XAxis, YAxis, Tooltip, ReferenceArea, ReferenceLine, CartesianGrid,
 } from 'recharts';
-import { api, fmt, compact } from '../api.js';
+import { api, fmt, compact, fmtDay } from '../api.js';
 import AlertForm from '../components/AlertForm.jsx';
 
 const RANGES = [
@@ -216,7 +216,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             <div className="cycle-key">
               {cycles.epochs.map(e => (
                 <span key={e.epoch}><i style={{ background: EPOCH_COLORS[e.epoch] ?? 'var(--cold)' }} />
-                  Epoch {e.epoch} <em>({e.start.slice(0, 7)}→)</em></span>
+                  Epoch {e.epoch} <em>({e.start.slice(5, 7)}/{e.start.slice(0, 4)}→)</em></span>
               ))}
               <span className="cycle-note">x-axis: days since epoch start · cycles aligned at their halvings</span>
             </div>
@@ -250,7 +250,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
               <span><i style={{ background: 'var(--aurora)' }} />Acquired below the close (in profit)</span>
               <span><i style={{ background: 'var(--hot)' }} />Acquired above the close (underwater)</span>
               <span><i style={{ background: 'var(--btc)' }} />The close sits here: {fmt(urpd.price, 'usd')}</span>
-              <span className="cycle-note">as of {urpd.day}, the latest finalized UTC day · each bar is a ${compact(urpd.width)} price bin</span>
+              <span className="cycle-note">as of {fmtDay(urpd.day)}, the latest finalized UTC day · each bar is a ${compact(urpd.width)} price bin</span>
             </div>
           </>
         )}
@@ -261,10 +261,10 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
         {view === 'series' && !err && rows.length > 0 && metric.kind === 'stacked' && (
           <div className="chartwrap"><ResponsiveContainer width="100%" height="100%">
             <AreaChart data={rows} stackOffset="expand" margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <XAxis dataKey="day" tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={60} />
+              <XAxis dataKey="day" tickFormatter={fmtDay} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={60} />
               <YAxis tickFormatter={(v) => (v * 100).toFixed(0) + '%'} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} />
               <Tooltip contentStyle={{ background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
-                formatter={(v, n) => [(v * 100).toFixed(2) + '%', n]} />
+                labelFormatter={fmtDay} formatter={(v, n) => [(v * 100).toFixed(2) + '%', n]} />
               {waveKeys.map((k, i) => (
                 <Area key={k} dataKey={k} stackId="1" stroke="none"
                   fill={WAVE_COLORS[i % WAVE_COLORS.length]} fillOpacity={0.85} isAnimationActive={false} />
@@ -276,7 +276,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
           <div className="chartwrap"><ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid stroke="var(--ink-line)" strokeOpacity={0.4} vertical={false} />
-              <XAxis dataKey="day" tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={60} />
+              <XAxis dataKey="day" tickFormatter={fmtDay} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={60} />
               <YAxis yAxisId="m" scale={logScale ? 'log' : 'linear'} domain={['auto', 'auto']}
                 allowDataOverflow tick={{ fill: 'var(--text-faint)', fontSize: 11 }}
                 tickFormatter={(v) => compact(v)} width={64} />
@@ -289,6 +289,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                 ? <ReferenceLine key={i} yAxisId="m" y={z.from} stroke="var(--text-faint)" strokeDasharray="4 4" />
                 : <ReferenceArea key={i} yAxisId="m" y1={z.from} y2={z.to} fill={toneColor(z.tone)} stroke="none" />)}
               <Tooltip contentStyle={{ background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
+                labelFormatter={fmtDay}
                 formatter={(v, n) => [fmt(Number(v), n === 'price' ? 'usd' : metric.format, metric.unit), seriesLabel(n)]} />
               {(data.columns ?? []).map((c, i) => (
                 <Line key={c} yAxisId="m" dataKey={c} dot={false} isAnimationActive={false}
