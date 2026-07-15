@@ -302,7 +302,7 @@ cd web && npm ci && npm run dev     # http://localhost:5173
 
 ## Testing
 
-101 tests (83 server, 18 web). The server has unit suites (subsidy schedule,
+103 tests (85 server, 18 web). The server has unit suites (subsidy schedule,
 catalog↔schema integrity, RPC transport) that run without a database, plus
 Postgres-backed integration
 suites that replay a synthetic chain against mock providers and verify the

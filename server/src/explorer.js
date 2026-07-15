@@ -92,7 +92,7 @@ async function blockFromDb(idOrHash) {
   const byHeight = HEIGHT.test(idOrHash);
   const r = await pool.query(
     `SELECT height, hash, EXTRACT(EPOCH FROM time)::bigint AS time, day::text,
-            tx_count, subsidy_sat, fees_sat, difficulty
+            tx_count, subsidy_sat, fees_sat, difficulty, size_bytes, weight
      FROM blocks WHERE ${byHeight ? 'height = $1' : 'hash = $1'}`,
     [byHeight ? Number(idOrHash) : idOrHash.toLowerCase()]);
   return r.rows[0] ?? null;
@@ -125,6 +125,14 @@ export async function getBlock(idOrHash, txStart = 0) {
     } catch { /* fall through to DB-only */ }
   }
   if (!db && !node) return null;
+  // Lazy backfill: rows synced before the size columns existed get them the
+  // first time the block is viewed with RPC available.
+  if (node && db && db.size_bytes == null && node.size != null) {
+    await pool.query(
+      'UPDATE blocks SET size_bytes = $1, weight = $2 WHERE height = $3 AND size_bytes IS NULL',
+      [node.size, node.weight ?? null, node.height]).catch(() => {});
+    db.size_bytes = node.size; db.weight = node.weight ?? null;
+  }
   const height = node?.height ?? db.height;
   const tip = await tipHeight();
   return {
@@ -132,6 +140,8 @@ export async function getBlock(idOrHash, txStart = 0) {
     hash: node?.hash ?? db.hash,
     time: node?.time ?? Number(db.time),
     tx_count: node?.txids?.length ?? db?.tx_count ?? null,
+    size_bytes: node?.size ?? db?.size_bytes ?? null,
+    weight: node?.weight ?? db?.weight ?? null,
     confirmations: tip != null && tip >= height ? tip - height + 1 : null, // null: beyond our synced tip
     subsidy_sat: db ? Number(db.subsidy_sat) : null,
     fees_sat: db ? Number(db.fees_sat) : null,
@@ -156,7 +166,8 @@ async function blockHashForTx(txid) {
 export async function getTx(txid) {
   txid = txid.toLowerCase();
   const outsR = await pool.query(
-    `SELECT vout, value_sat, address, created_height, spent_height, coinbase
+    `SELECT vout, value_sat, address, created_height, spent_height, coinbase,
+            encode(spent_txid, 'hex') AS spent_txid
      FROM utxos WHERE txid = $1 ORDER BY vout`, [Buffer.from(txid, 'hex')]);
   const tracked = outsR.rows;
 
@@ -229,17 +240,21 @@ export async function getTx(txid) {
           scriptsig_asm: v.scriptSig?.asm ?? null,
           witness: v.txinwitness ?? null }) ?? null,
     outputs: node
-      ? node.vout.map(o => ({
-          n: o.n, value_btc: r8(o.value), address: o.scriptPubKey?.address ?? null,
-          type: o.scriptPubKey?.type ?? null,
-          scriptpubkey_asm: o.scriptPubKey?.asm ?? null,
-          spent: tracked.find(t => t.vout === o.n)?.spent_height != null ? true
-            : tracked.find(t => t.vout === o.n) ? false : null,
-        }))
+      ? node.vout.map(o => {
+          const row = tracked.find(t => t.vout === o.n);
+          return {
+            n: o.n, value_btc: r8(o.value), address: o.scriptPubKey?.address ?? null,
+            type: o.scriptPubKey?.type ?? null,
+            scriptpubkey_asm: o.scriptPubKey?.asm ?? null,
+            spent: row ? row.spent_height != null : null,
+            spent_txid: row?.spent_txid ?? null,
+          };
+        })
       : tracked.map(t => ({
           n: t.vout, value_btc: Number(t.value_sat) / 1e8, address: t.address,
           type: null, scriptpubkey_asm: null,
           spent: t.spent_height != null,
+          spent_txid: t.spent_txid ?? null,
         })),
     rpc: !!node,
   };
@@ -362,7 +377,7 @@ export function explorerRouter() {
     try {
       const r2 = await pool.query(
         `SELECT height, hash, EXTRACT(EPOCH FROM time)::bigint AS time, tx_count,
-                fees_sat::bigint AS fees_sat
+                fees_sat::bigint AS fees_sat, size_bytes, weight
          FROM blocks ORDER BY height DESC LIMIT 12`);
       res.json({ blocks: r2.rows.map(b => ({ ...b, time: Number(b.time), fees_sat: Number(b.fees_sat) })) });
     } catch (e) { res.status(500).json({ error: e.message }); }

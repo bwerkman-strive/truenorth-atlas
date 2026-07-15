@@ -229,6 +229,9 @@ test('reorg: rollbackAbove restores every counter and the UTXO set exactly', asy
   }]);
   assert.equal(await tipHeight(), 5);
   assert.notEqual(await getState(pool, 'realized_cap_usd'), rcBefore);
+  const spentByOrphan = await pool.query(
+    "SELECT encode(spent_txid,'hex') st FROM utxos WHERE txid=$1", [Buffer.from(txidB, 'hex')]);
+  assert.equal(spentByOrphan.rows[0].st, '99'.repeat(32), 'spend attribution recorded');
 
   await rollbackAbove(4);
 
@@ -249,8 +252,9 @@ test('reorg: rollbackAbove restores every counter and the UTXO set exactly', asy
     'SELECT COUNT(*)::int c FROM utxos WHERE spent_height IS NULL')).rows[0].c;
   assert.equal(unspent, unspentBefore, 'orphaned creations gone, orphaned spends un-marked');
 
-  const b = await pool.query('SELECT spent_height FROM utxos WHERE txid=$1', [Buffer.from(txidB, 'hex')]);
+  const b = await pool.query('SELECT spent_height, spent_txid FROM utxos WHERE txid=$1', [Buffer.from(txidB, 'hex')]);
   assert.equal(b.rows[0].spent_height, null, 'txidB is live again');
+  assert.equal(b.rows[0].spent_txid, null, 'spend attribution rolled back with it');
 
   const orphan = await pool.query('SELECT 1 FROM utxos WHERE txid=$1', [Buffer.from(txidR, 'hex')]);
   assert.equal(orphan.rows.length, 0, 'orphan coinbase removed');

@@ -11,6 +11,9 @@ const btc = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleSt
 const sat2btc = (s) => btc(Number(s) / 1e8);
 const when = (t) => (t ? new Date(t * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : '—');
 const mid = (s, n = 12) => (s && s.length > n * 2 + 3 ? s.slice(0, n) + '…' + s.slice(-n) : s);
+const blkSize = (bytes) => (bytes == null ? '—'
+  : bytes >= 1e6 ? (bytes / 1e6).toFixed(2) + ' MB'
+  : (bytes / 1e3).toFixed(1) + ' kB');
 
 function go(hash) { window.location.hash = hash; window.scrollTo(0, 0); }
 
@@ -84,13 +87,14 @@ function ExplorerHome() {
         {recent && recent.length > 0 && (
           <div className="xtable" role="table">
             <div className="xthead" role="row">
-              <span>Height</span><span>Time</span><span>Txs</span><span>Fees</span>
+              <span>Height</span><span>Time</span><span>Txs</span><span>Size</span><span>Fees</span>
             </div>
             {recent.map(b => (
               <button key={b.height} className="xtr" role="row" onClick={() => go(`#/b/${b.height}`)}>
                 <span className="mono">{b.height.toLocaleString()}</span>
                 <span>{when(b.time)}</span>
                 <span>{b.tx_count?.toLocaleString?.() ?? b.tx_count}</span>
+                <span>{blkSize(b.size_bytes)}</span>
                 <span>{sat2btc(b.fees_sat)}</span>
               </button>
             ))}
@@ -159,7 +163,7 @@ function BlockView({ id }) {
   if (err) return <div className="wrap"><div className="err">Block not found: {err}</div></div>;
   if (!b) return <div className="wrap"><div className="loading">Loading block…</div></div>;
   const d = b.detail;
-  const vsize = d?.weight ? Math.ceil(d.weight / 4) : null;
+  const vsize = b.weight ? Math.ceil(b.weight / 4) : null;
   const txFrom = page * TX_PAGE;
   const hasPager = b.txs && b.tx_count > TX_PAGE;
   return (
@@ -177,10 +181,11 @@ function BlockView({ id }) {
         <Row label="Subsidy">{sat2btc(b.subsidy_sat)}</Row>
         <Row label="Fees">{sat2btc(b.fees_sat)}</Row>
         <Row label="Difficulty">{b.difficulty ? compact(b.difficulty) : '—'}</Row>
-        {d && <>
+        {b.size_bytes != null &&
           <Row label="Size / Weight">
-            {d.size?.toLocaleString()} B / {d.weight?.toLocaleString()} WU{vsize ? ` (${vsize.toLocaleString()} vB)` : ''}
-          </Row>
+            {b.size_bytes.toLocaleString()} B / {b.weight?.toLocaleString()} WU{vsize ? ` (${vsize.toLocaleString()} vB)` : ''}
+          </Row>}
+        {d && <>
           {d.mediantime != null && <Row label="Median time">{when(d.mediantime)}</Row>}
           <Row label="Version / Bits / Nonce" monoValue>
             0x{d.version?.toString(16)} / {d.bits} / {d.nonce?.toLocaleString()}
@@ -307,7 +312,9 @@ function TxView({ txid }) {
                   <span className="mono">{o.address ? <a href={`#/a/${o.address}`}>{mid(o.address, 10)}</a> : 'non-standard'}</span>
                   <span className="xamt">{btc(o.value_btc)}
                     {o.type && <em className="xtype">{o.type}</em>}
-                    {o.spent === true && <em className="xspent"> spent</em>}
+                    {o.spent === true && (o.spent_txid
+                      ? <em className="xspent"> <a href={`#/tx/${o.spent_txid}`}>spent →</a></em>
+                      : <em className="xspent"> spent</em>)}
                     {o.spent === false && <em className="xunspent"> unspent</em>}
                   </span>
                   {scripts && o.scriptpubkey_asm && <div className="xscript">{o.scriptpubkey_asm}</div>}

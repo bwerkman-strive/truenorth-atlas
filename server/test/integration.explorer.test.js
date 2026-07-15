@@ -156,6 +156,8 @@ test('block lookup by height and by hash, RPC-enriched with full txids', async (
   assert.equal(byH.tx_count, 2);
   assert.equal(byH.fees_sat, 10000, '0.0001 BTC fee recorded by sync');
   assert.equal(byH.confirmations, 1, 'tip block has 1 confirmation');
+  assert.equal(byH.size_bytes, 500, 'size recorded by sync');
+  assert.equal(byH.weight, 2000);
   assert.equal(byH.rpc, true);
   assert.deepEqual(byH.detail.txids, [TX_CB2, TX_SPEND]);
   assert.equal(byH.detail.mediantime, T0 + 300);
@@ -277,6 +279,27 @@ test('search dispatches height, hash, txid, address, and garbage correctly', asy
 test('recent blocks feed', async () => {
   const { body } = await getJson('/api/explorer/blocks/recent');
   assert.deepEqual(body.blocks.map(b => b.height), [2, 1]);
+  assert.deepEqual(body.blocks.map(b => b.size_bytes), [500, 285]);
+  assert.deepEqual(body.blocks.map(b => b.weight), [2000, 1140]);
+});
+
+test('spent outputs carry the spending txid within the retention window', async () => {
+  const t = (await getJson(`/api/explorer/tx/${TX_CB1}`)).body;
+  assert.equal(t.outputs[0].spent, true);
+  assert.equal(t.outputs[0].spent_txid, TX_SPEND, 'spend attribution from the UTXO set');
+
+  const unspent = (await getJson(`/api/explorer/tx/${TX_SPEND}`)).body;
+  assert.equal(unspent.outputs[0].spent, false);
+  assert.equal(unspent.outputs[0].spent_txid, null);
+});
+
+test('block size columns backfill lazily on view when RPC is up', async () => {
+  await pool.query('UPDATE blocks SET size_bytes = NULL, weight = NULL WHERE height = 1');
+  const b = (await getJson('/api/explorer/block/1')).body;
+  assert.equal(b.size_bytes, 285, 'served from the node payload');
+  const row = (await pool.query('SELECT size_bytes, weight FROM blocks WHERE height = 1')).rows[0];
+  assert.equal(row.size_bytes, 285, 'written back to the local index');
+  assert.equal(row.weight, 1140);
 });
 
 // ---------------------------------------------------------------------------

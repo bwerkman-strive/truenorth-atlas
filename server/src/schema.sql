@@ -39,6 +39,14 @@ CREATE TABLE IF NOT EXISTS utxos (
 ALTER TABLE utxos ADD COLUMN IF NOT EXISTS address TEXT;
 CREATE INDEX IF NOT EXISTS utxos_address_live
   ON utxos (address) WHERE spent_height IS NULL AND address IS NOT NULL;
+-- Explorer: block size/weight on summaries (recorded going forward, lazily
+-- backfilled from RPC on view for blocks synced before these columns), and
+-- spend attribution so spent outputs link to their spending tx within the
+-- PRUNE_DEPTH retention window. rollbackAbove() must clear spent_txid in the
+-- same statement that clears spent_height.
+ALTER TABLE blocks ADD COLUMN IF NOT EXISTS size_bytes INTEGER;
+ALTER TABLE blocks ADD COLUMN IF NOT EXISTS weight INTEGER;
+ALTER TABLE utxos ADD COLUMN IF NOT EXISTS spent_txid BYTEA;
 -- Partial index over the live UTXO set: powers supply-in-profit, HODL waves, cohorts.
 CREATE INDEX IF NOT EXISTS utxos_unspent_price_idx
   ON utxos (created_price) INCLUDE (value_sat, created_time) WHERE spent_height IS NULL;

@@ -67,7 +67,7 @@ export async function rollbackAbove(height) {
     const mint = await client.query(
       `SELECT COALESCE(SUM(subsidy_sat),0) AS m FROM blocks WHERE height > $1`, [height]);
     await client.query('DELETE FROM utxos WHERE created_height > $1', [height]);
-    await client.query('UPDATE utxos SET spent_height = NULL WHERE spent_height > $1', [height]);
+    await client.query('UPDATE utxos SET spent_height = NULL, spent_txid = NULL WHERE spent_height > $1', [height]);
     await client.query('DELETE FROM blocks WHERE height > $1', [height]); // cascades block_agg
     await setState(client, 'realized_cap_usd', await getState(client, 'realized_cap_usd') - Number(sums.rows[0].rc));
     await setState(client, 'cum_cdd', await getState(client, 'cum_cdd') - Number(sums.rows[0].cdd));
@@ -103,7 +103,7 @@ export async function processBlocks(blocks) {
 
       // Creation + spend batches for set operations
       const cTxid = [], cVout = [], cVal = [], cCb = [], cAddr = [];
-      const sTxid = [], sVout = [];
+      const sTxid = [], sVout = [], sSpender = [];
       let mintedSat = 0, feesSat = 0;
 
       for (const tx of b.tx) {
@@ -139,6 +139,7 @@ export async function processBlocks(blocks) {
             }
             sTxid.push(Buffer.from(vin.txid, 'hex'));
             sVout.push(vin.vout);
+            sSpender.push(Buffer.from(tx.txid, 'hex'));
           }
         }
 
@@ -171,16 +172,17 @@ export async function processBlocks(blocks) {
       // Mark spends
       if (sTxid.length) {
         await client.query(
-          `UPDATE utxos u SET spent_height = $3
-           FROM unnest($1::bytea[], $2::int[]) AS s(t, v)
+          `UPDATE utxos u SET spent_height = $4, spent_txid = s.sp
+           FROM unnest($1::bytea[], $2::int[], $3::bytea[]) AS s(t, v, sp)
            WHERE u.txid = s.t AND u.vout = s.v AND u.spent_height IS NULL`,
-          [sTxid, sVout, b.height]);
+          [sTxid, sVout, sSpender, b.height]);
       }
 
       await client.query(
-        `INSERT INTO blocks (height, hash, time, day, tx_count, subsidy_sat, fees_sat, difficulty)
-         VALUES ($1,$2,to_timestamp($3),$4,$5,$6,$7,$8)`,
-        [b.height, b.hash, b.time, day, b.tx.length, mintedSat - feesSat, feesSat, b.difficulty ?? 0]);
+        `INSERT INTO blocks (height, hash, time, day, tx_count, subsidy_sat, fees_sat, difficulty, size_bytes, weight)
+         VALUES ($1,$2,to_timestamp($3),$4,$5,$6,$7,$8,$9,$10)`,
+        [b.height, b.hash, b.time, day, b.tx.length, mintedSat - feesSat, feesSat, b.difficulty ?? 0,
+         b.size ?? null, b.weight ?? null]);
 
       const minerRevUsd = (mintedSat / SAT) * spot;
       await client.query(
