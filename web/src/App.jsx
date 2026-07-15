@@ -102,7 +102,8 @@ export default function App() {
               <a href="#/explorer" className={route.page === 'explorer' ? 'on' : ''}>Explorer</a>
             </nav>
             <div className="hdr-status">
-              <span className="hide-sm">
+              <span className="hide-sm" title={status?.latestMetricsDay
+                ? `Latest finalized day: ${status.latestMetricsDay}` : undefined}>
                 <span className={'dot' + (stale ? ' stale' : '')} />
                 {status?.syncedHeight
                   ? `block ${Number(status.syncedHeight).toLocaleString()}`
@@ -141,10 +142,6 @@ export default function App() {
             )}
           </div>
           <div className="wrap disclaimer">
-            Every series on this page is computed from a fully-validating Bitcoin node and daily
-            USD closes; methodology is documented on each metric. Data finalizes at each UTC day
-            end{status?.latestMetricsDay ? `; latest finalized day: ${status.latestMetricsDay}` : ''}.
-            <br /><br />
             True North Atlas is for informational and educational purposes only. Nothing here is
             investment advice or an offer of any security or investment product. Consult your own
             investment and tax advisors.
