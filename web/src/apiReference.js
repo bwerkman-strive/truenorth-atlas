@@ -19,7 +19,7 @@ export const API_ENDPOINTS = [
     method: 'GET',
     path: '/v1/search?q={query}',
     title: 'Universal search',
-    desc: 'Dispatches any query — block height, block hash, transaction ID, or address — to the right lookup. The response nests the same object the dedicated endpoint would return, under "block", "tx", or "address".',
+    desc: 'Dispatches any query (block height, block hash, transaction ID, or address) to the right lookup. The response nests the same object the dedicated endpoint would return, under "block", "tx", or "address".',
     example: '/v1/search?q=840000',
     response: {
       found: 'block',
@@ -74,7 +74,7 @@ export const API_ENDPOINTS = [
     method: 'GET',
     path: '/v1/tx/{txid}',
     title: 'Transaction lookup',
-    desc: 'Full input/output detail when the node is reachable — including without txindex, via the app\'s own UTXO index. Output "spent" flags are merged from the live UTXO set: true, false, or null when no longer tracked.',
+    desc: 'Full input/output detail when the node is reachable, including without txindex, via the app\'s own UTXO index. Output "spent" flags are merged from the live UTXO set: true, false, or null when no longer tracked.',
     example: '/v1/tx/eae06e…f024',
     response: {
       txid: 'eae06e0225e3fa4dbfbc26b3fed384e0eb4e0f0b2d3bd41c4d4e0fca7cd0f024',
@@ -127,7 +127,7 @@ export const API_ENDPOINTS = [
     method: 'GET',
     path: '/v1/blocks/recent',
     title: 'Recent blocks',
-    desc: 'The 12 most recently synced blocks — a lightweight feed for dashboards.',
+    desc: 'The 12 most recently synced blocks, a lightweight feed for dashboards.',
     example: '/v1/blocks/recent',
     response: {
       blocks: [

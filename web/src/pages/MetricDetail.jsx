@@ -190,7 +190,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                 <span key={e.epoch}><i style={{ background: EPOCH_COLORS[e.epoch] ?? 'var(--cold)' }} />
                   Epoch {e.epoch} <em>({e.start.slice(0, 7)}→)</em></span>
               ))}
-              <span className="cycle-note">x-axis: days since epoch start — cycles aligned at their halvings</span>
+              <span className="cycle-note">x-axis: days since epoch start · cycles aligned at their halvings</span>
             </div>
           </>
         )}
@@ -199,7 +199,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
         )}
         {view === 'series' && !err && !data && <div className="loading">Loading series…</div>}
         {view === 'series' && !err && data && rows.length === 0 && (
-          <div className="loading">No finalized data for this range yet — the sync worker is still building history.</div>
+          <div className="loading">No finalized data for this range yet. The sync worker is still building history.</div>
         )}
         {view === 'series' && !err && rows.length > 0 && metric.kind === 'stacked' && (
           <div className="chartwrap"><ResponsiveContainer width="100%" height="100%">

@@ -70,7 +70,7 @@ function ExplorerHome() {
         <p className="eyebrow">Every Block. Every Coin. First-Hand.</p>
         <h1>Block Explorer</h1>
         <p>
-          Search blocks, transactions, and addresses — served from the same fully-validating
+          Search blocks, transactions, and addresses, served from the same fully-validating
           node behind the analytics. <span className="free">Free, for the community.</span>
         </p>
       </div>
@@ -79,7 +79,7 @@ function ExplorerHome() {
         <div className="sec"><h2>Latest blocks</h2></div>
         {!recent && <div className="loading">Loading…</div>}
         {recent && recent.length === 0 && (
-          <div className="syncnote">No blocks synced yet — the worker is starting its replay from genesis.</div>
+          <div className="syncnote">No blocks synced yet. The worker is starting its replay from genesis.</div>
         )}
         {recent && recent.length > 0 && (
           <div className="xtable" role="table">

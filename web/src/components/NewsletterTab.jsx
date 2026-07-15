@@ -73,7 +73,7 @@ export default function NewsletterTab({ token, catalog }) {
     setBusy(true); setErr(null);
     try {
       await api.admin.scheduleNewsletter(token, editing.id, at);
-      setNotice(now ? 'Queued — sending within the next minute.' : `Scheduled for ${at}.`);
+      setNotice(now ? 'Queued; sending within the next minute.' : `Scheduled for ${at}.`);
       setEditing(null);
       await refresh();
     } catch (e) { setErr(e.message); }
@@ -143,7 +143,7 @@ export default function NewsletterTab({ token, catalog }) {
         <label>Subject
           <input value={editing.subject} maxLength={200}
             onChange={(e) => setEditing({ ...editing, subject: e.target.value })}
-            placeholder="The Weekly Bearing — MVRV stretches into the hot zone" />
+            placeholder="The Weekly Bearing: MVRV stretches into the hot zone" />
         </label>
         <label>Preheader <span className="xmeta">(inbox preview line, optional)</span>
           <input value={editing.preheader} maxLength={200}
@@ -153,11 +153,11 @@ export default function NewsletterTab({ token, catalog }) {
         <label>Body <span className="xmeta">(## headings, **bold**, *italic*, [links](https://…), - bullets)</span>
           <textarea rows={12} value={editing.body_md}
             onChange={(e) => setEditing({ ...editing, body_md: e.target.value })}
-            placeholder={'## Where we stand\n\nMVRV closed the week at **2.4** — the 87th percentile of all history…'} />
+            placeholder={'## Where we stand\n\nMVRV closed the week at **2.4**, the 87th percentile of all history…'} />
         </label>
 
         <div className="nl-charts">
-          <div className="nl-charts-hd">Attach charts <span className="xmeta">({editing.charts.size}/8 — embedded as branded cards)</span></div>
+          <div className="nl-charts-hd">Attach charts <span className="xmeta">({editing.charts.size}/8, embedded as branded cards)</span></div>
           <div className="nl-chart-grid">
             {lineMetrics.map(m => (
               <label key={m.slug} className={editing.charts.has(m.slug) ? 'on' : ''}>

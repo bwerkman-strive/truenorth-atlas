@@ -32,7 +32,7 @@ export default function AlertForm({ metric, currentValue }) {
   if (state === 'sent') {
     return (
       <p className="alert-sent">
-        Check your inbox — confirm the alert and we'll email you when {metric.name} crosses
+        Check your inbox and confirm the alert. We'll email you when {metric.name} crosses
         {' '}{condition} {threshold} on finalized daily data. One click unsubscribes, ever.
       </p>
     );

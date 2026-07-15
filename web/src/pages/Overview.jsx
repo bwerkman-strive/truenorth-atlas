@@ -36,8 +36,8 @@ export default function Overview({ catalog, latest, onOpen }) {
         <p className="eyebrow">Navigating the Bitcoin Ledger</p>
         <h1>Atlas <span className="h1-sub">/ Bitcoin On-Chain Analytics</span></h1>
         <p>
-          Institutional-grade metrics computed directly from a fully-validating Bitcoin node —
-          no third-party data vendors between you and the ledger.{' '}
+          Institutional-grade metrics computed directly from a fully-validating Bitcoin node,
+          with no third-party data vendors between you and the ledger.{' '}
           <span className="free">Free, for the community.</span>
         </p>
         <p className="dial-legend">
@@ -59,7 +59,7 @@ export default function Overview({ catalog, latest, onOpen }) {
         {latest.day === null && (
           <div className="syncnote">
             The node sync is still building history. Metrics appear here as each day of the
-            chain is finalized — valuation series populate from 2010 onward as the sync advances.
+            chain is finalized; valuation series populate from 2010 onward as the sync advances.
           </div>
         )}
         {shown.map(g => (

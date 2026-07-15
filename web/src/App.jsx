@@ -74,7 +74,7 @@ export default function App() {
   const open = useCallback((slug) => { window.location.hash = `#/m/${slug}`; window.scrollTo(0, 0); }, []);
   const back = useCallback(() => { window.location.hash = '#/'; }, []);
 
-  if (err) return <div className="err">The analytics API is unreachable ({err}). It may still be deploying — retry in a moment.</div>;
+  if (err) return <div className="err">The analytics API is unreachable ({err}). It may still be deploying; retry in a moment.</div>;
   if (!catalog || !latest) return (
     <div className="loading loading-boot">
       <EpochRings size={64} title="True North Atlas" />
@@ -142,7 +142,7 @@ export default function App() {
           </div>
           <div className="wrap disclaimer">
             Every series on this page is computed from a fully-validating Bitcoin node and daily
-            USD closes — methodology is documented on each metric. Data finalizes at each UTC day
+            USD closes; methodology is documented on each metric. Data finalizes at each UTC day
             end{status?.latestMetricsDay ? `; latest finalized day: ${status.latestMetricsDay}` : ''}.
             <br /><br />
             True North Atlas is for informational and educational purposes only. Nothing here is

@@ -53,7 +53,7 @@ function KeysTab({ token }) {
 
       {fresh && (
         <div className="xfresh">
-          <strong>Key created for “{fresh.name}” — copy it now.</strong> It is shown once and
+          <strong>Key created for “{fresh.name}”. Copy it now.</strong> It is shown once and
           cannot be retrieved later; only its hash is stored.
           <div className="xfresh-key mono">
             {fresh.key}
@@ -68,7 +68,7 @@ function KeysTab({ token }) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && create()}
-          placeholder="Key name — e.g. sata-dashboard, treasury-bot…"
+          placeholder="Key name, e.g. sata-dashboard, treasury-bot…"
           maxLength={120}
         />
         <button onClick={create} disabled={busy || !name.trim()}>{busy ? '…' : 'Create key'}</button>
@@ -153,7 +153,7 @@ function AdminsTab({ token, isRoot }) {
 
       {fresh && (
         <div className="xfresh">
-          <strong>Admin token created for “{fresh.name}” — hand it over securely now.</strong>{' '}
+          <strong>Admin token created for “{fresh.name}”. Hand it over securely now.</strong>{' '}
           It is shown once; only its hash is stored.
           <div className="xfresh-key mono">
             {fresh.token}
@@ -168,14 +168,14 @@ function AdminsTab({ token, isRoot }) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && create()}
-          placeholder="Admin name — e.g. jane-ops, treasury-team…"
+          placeholder="Admin name, e.g. jane-ops, treasury-team…"
           maxLength={120}
         />
         <button onClick={create} disabled={busy || !name.trim()}>{busy ? '…' : 'Add admin'}</button>
       </div>
 
       {admins && admins.length === 0 && (
-        <div className="syncnote">No named admins yet — you are operating on the root token alone.
+        <div className="syncnote">No named admins yet; you are operating on the root token alone.
         Mint yourself a personal admin token for day-to-day use and keep root locked away.</div>
       )}
       {admins && admins.length > 0 && (
@@ -220,7 +220,7 @@ function EmailLogTab({ token }) {
   return (
     <>
       <div className="syncnote">
-        The complete, immutable record of every email this platform has attempted to send — recipient,
+        The complete, immutable record of every email this platform has attempted to send: recipient,
         subject, type, outcome, and the provider's message ID. Failures are recorded too.
       </div>
       {err && <div className="err">{err}</div>}
@@ -270,7 +270,7 @@ function ApiTab() {
         <p>
           Programmatic access lives under <code>/v1</code> and requires an active key in the{' '}
           <code>{API_AUTH_DOC.header}</code> header. Keys look like{' '}
-          <code>{API_AUTH_DOC.keyFormat}</code> and are unmetered — the public{' '}
+          <code>{API_AUTH_DOC.keyFormat}</code> and are unmetered; the public{' '}
           <code>/api/explorer</code> surface is identical but rate-limited per IP.
         </p>
         <pre className="xjson">{API_AUTH_DOC.curl}</pre>
@@ -343,7 +343,7 @@ export default function Admin() {
         </div>
         <div className="syncnote">
           The token is held in memory for this tab only and sent as a Bearer header on admin
-          requests — it is never written to storage. A wrong token simply gets 401s from the API.
+          requests; it is never written to storage. A wrong token simply gets 401s from the API.
         </div>
       </div>
     );
@@ -353,7 +353,7 @@ export default function Admin() {
     <div className="wrap">
       <div className="hero">
         <h1>Admin</h1>
-        <p>Signed in as <strong>{who?.name}</strong>{who?.root ? ' (root)' : ''} — private-API key
+        <p>Signed in as <strong>{who?.name}</strong>{who?.root ? ' (root)' : ''}: private-API key
         management{who?.root ? ', admin management,' : ''} and integration reference.</p>
       </div>
       <nav className="catnav" aria-label="Admin sections">

@@ -24,7 +24,7 @@ export default function BearingDial({ percentile, size = 46 }) {
   return (
     <svg className="dial" width={size} height={size} role="img"
       aria-label={`Historical percentile ${(p * 100).toFixed(0)}`}>
-      <title>{`Bearing: today's value is higher than ${(p * 100).toFixed(0)}% of all history — ` +
+      <title>{`Bearing: today's value is higher than ${(p * 100).toFixed(0)}% of all history: ` +
         (p < 0.2 ? 'historically depressed' : p > 0.8 ? 'historically stretched' : 'mid-range')}</title>
       <path d={arc(a0, a1, r)} stroke="var(--ink-line)" strokeWidth="3" fill="none" strokeLinecap="round" />
       <path d={arc(a0, ang, r)} stroke={color} strokeWidth="3" fill="none" strokeLinecap="round" />
