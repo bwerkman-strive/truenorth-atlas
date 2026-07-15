@@ -17,25 +17,20 @@ export default function EpochRings({ height = null, size = 30, title }) {
     <svg viewBox="0 0 240 240" width={size} height={size} fill="none"
       role="img" aria-label={label} className="epoch-rings">
       <title>{label}</title>
-      <defs>
-        <linearGradient id="er-aur" x1="0" y1="1" x2="1" y2="0">
-          <stop offset="0" stopColor="var(--cold, #58A8FF)" />
-          <stop offset="1" stopColor="var(--aurora, #4FE3A9)" />
-        </linearGradient>
-      </defs>
-
-      {/* Epoch rings — tightening like issuance */}
-      <circle cx="120" cy="120" r="34" stroke="var(--ink-line, #1C2B47)" strokeWidth="9" />
-      <circle cx="120" cy="120" r="58" stroke="var(--ink-line, #1C2B47)" strokeWidth="8" />
-      <circle cx="120" cy="120" r="78" stroke="var(--ink-line, #1C2B47)" strokeWidth="7" />
-      <circle cx="120" cy="120" r="94" stroke="url(#er-aur)" strokeWidth="8" />
+      {/* Epoch rings — tightening like issuance. The mark is monochrome
+          (hairline inner rings, bone outer ring and star); the coin is its
+          single, permanent touch of Bitcoin orange. */}
+      <circle cx="120" cy="120" r="34" stroke="var(--ink-line, rgba(110,106,96,0.4))" strokeWidth="9" />
+      <circle cx="120" cy="120" r="58" stroke="var(--ink-line, rgba(110,106,96,0.4))" strokeWidth="8" />
+      <circle cx="120" cy="120" r="78" stroke="var(--ink-line, rgba(110,106,96,0.4))" strokeWidth="7" />
+      <circle cx="120" cy="120" r="94" stroke="var(--bone, #F2EDE3)" strokeWidth="8" strokeOpacity="0.9" />
 
       {/* Center marker */}
-      <path d="M120 106 L126 118 L120 130 L114 118 Z" fill="var(--text, #E8EEF7)" />
+      <path d="M120 106 L126 118 L120 130 L114 118 Z" fill="var(--bone, #F2EDE3)" />
 
       {/* North star at true north */}
       <path d="M120 6 L127 20 L141 24 L127 28 L120 42 L113 28 L99 24 L113 20 Z"
-        fill="var(--aurora, #4FE3A9)" />
+        fill="var(--bone, #F2EDE3)" />
 
       {/* The coin: data-positioned when the chain height is known, orbiting otherwise */}
       {coin ? (

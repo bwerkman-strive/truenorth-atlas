@@ -4,9 +4,9 @@
 //   or failure, is written to email_log with the provider's message id, so the
 //   audit trail is complete by construction.
 //
-//   renderEmail() — the standard Atlas email format: navy card on dark, the
-//   TRUE NORTH ATLAS lockup over an aurora bar, generous type, a single aurora
-//   CTA, and a compliance footer. Built from table-based HTML with inline
+//   renderEmail() — the standard Atlas email format: ink card on ink, the
+//   TRUE NORTH ATLAS lockup over an orange bar, generous type, a single
+//   bone-pill CTA, and a compliance footer. Built from table-based HTML with inline
 //   styles (the only thing mail clients reliably render); charts arrive as
 //   hosted OG-card images so every email inherits the site's branding and
 //   watermark for free.
@@ -17,8 +17,11 @@
 import { pool } from './db.js';
 import { config } from './config.js';
 
-const INK = '#070d1a', PANEL = '#0d1526', LINE = '#1c2b47';
-const AURORA = '#4fe3a9', COLD = '#58a8ff', SLATE = '#6c809a', TEXT = '#e8eef7';
+// Strive brand system: ink surfaces, bone text/CTAs, slate secondary,
+// hairlines, orange as the single reserved accent (eyebrows, links, the
+// wordmark's one orange touch).
+const INK = '#0b0c0e', PANEL = '#0f1013', LINE = '#333230';
+const ORANGE = '#f7931a', BONE = '#f2ede3', BODY = '#d5cfc1', SLATE = '#918b7d', TEXT = '#f2ede3';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -27,7 +30,7 @@ const esc = (s) => String(s ?? '')
 export function mdLite(md) {
   const inline = (s) => s
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-      `<a href="$2" style="color:${COLD};text-decoration:none">$1</a>`)
+      `<a href="$2" style="color:${ORANGE};text-decoration:none">$1</a>`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>');
 
@@ -37,13 +40,13 @@ export function mdLite(md) {
     if (!lines.length) return '';
     if (lines[0].startsWith('## ')) {
       return `<h2 style="font-size:20px;margin:26px 0 10px;color:${TEXT}">${inline(lines[0].slice(3))}</h2>`
-        + (lines.length > 1 ? `<p style="margin:0 0 16px;line-height:1.7;color:#c6d2e4">${lines.slice(1).map(inline).join('<br>')}</p>` : '');
+        + (lines.length > 1 ? `<p style="margin:0 0 16px;line-height:1.7;color:${BODY}">${lines.slice(1).map(inline).join('<br>')}</p>` : '');
     }
     if (lines.every(l => l.startsWith('- '))) {
-      return `<ul style="margin:0 0 16px;padding-left:22px;color:#c6d2e4;line-height:1.7">`
+      return `<ul style="margin:0 0 16px;padding-left:22px;color:${BODY};line-height:1.7">`
         + lines.map(l => `<li style="margin:4px 0">${inline(l.slice(2))}</li>`).join('') + '</ul>';
     }
-    return `<p style="margin:0 0 16px;line-height:1.7;color:#c6d2e4">${lines.map(inline).join('<br>')}</p>`;
+    return `<p style="margin:0 0 16px;line-height:1.7;color:${BODY}">${lines.map(inline).join('<br>')}</p>`;
   }).join('');
 }
 
@@ -68,19 +71,19 @@ ${preheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0">
   <table role="presentation" width="600" cellpadding="0" cellspacing="0"
     style="max-width:600px;width:100%;background:${PANEL};border:1px solid ${LINE};border-radius:16px">
     <tr><td style="padding:30px 32px 0;font-family:Helvetica,Arial,sans-serif">
-      <div style="font-weight:700;font-size:17px;letter-spacing:.05em;color:${TEXT}">
-        TRUE NORTH <span style="color:${AURORA}">ATLAS</span></div>
+      <div style="font-weight:700;font-size:17px;letter-spacing:.12em;color:${TEXT}">
+        TRUE NORTH <span style="color:${ORANGE}">ATLAS</span></div>
       <div style="height:3px;width:64px;margin:12px 0 0;border-radius:2px;
-        background:linear-gradient(90deg,${COLD},${AURORA});font-size:0">&nbsp;</div>
+        background:${ORANGE};font-size:0">&nbsp;</div>
     </td></tr>
     <tr><td style="padding:26px 32px 6px;font-family:Helvetica,Arial,sans-serif">
-      ${eyebrow ? `<div style="font-size:11px;font-weight:700;letter-spacing:.16em;color:${AURORA};text-transform:uppercase;margin:0 0 8px">${esc(eyebrow)}</div>` : ''}
+      ${eyebrow ? `<div style="font-size:11px;font-weight:700;letter-spacing:.16em;color:${ORANGE};text-transform:uppercase;margin:0 0 8px">${esc(eyebrow)}</div>` : ''}
       ${title ? `<h1 style="margin:0 0 16px;font-size:25px;line-height:1.3;color:${TEXT}">${esc(title)}</h1>` : ''}
       ${bodyHtml}
       ${cta ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 10px"><tr><td
-        style="background:${AURORA};border-radius:9px">
-        <a href="${esc(cta.url)}" style="display:inline-block;padding:13px 24px;font-family:Helvetica,Arial,sans-serif;
-        font-weight:700;font-size:15px;color:${INK};text-decoration:none">${esc(cta.label)}</a></td></tr></table>` : ''}
+        style="background:${BONE};border-radius:999px">
+        <a href="${esc(cta.url)}" style="display:inline-block;padding:13px 26px;font-family:Helvetica,Arial,sans-serif;
+        font-weight:700;font-size:14px;letter-spacing:.04em;color:${INK};text-decoration:none">${esc(cta.label)}</a></td></tr></table>` : ''}
     </td></tr>
     <tr><td style="padding:10px 32px 28px;font-family:Helvetica,Arial,sans-serif">
       <div style="border-top:1px solid ${LINE};padding-top:16px;color:${SLATE};font-size:12px;line-height:1.65">
@@ -91,7 +94,7 @@ ${preheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0">
       </div>
     </td></tr>
   </table>
-  <div style="font-family:Helvetica,Arial,sans-serif;color:#3d4d6b;font-size:11px;padding:16px">
+  <div style="font-family:Helvetica,Arial,sans-serif;color:#6a655a;font-size:11px;padding:16px">
     A True North Media Network property · Powered by Strive</div>
 </td></tr></table>
 </body></html>`;

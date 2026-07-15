@@ -203,7 +203,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                   tickFormatter={(d) => d + 'd'} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} />
                 <YAxis scale={logScale ? 'log' : 'linear'} domain={['auto', 'auto']} allowDataOverflow
                   tick={{ fill: 'var(--text-faint)', fontSize: 11 }} tickFormatter={(v) => compact(v)} width={64} />
-                <Tooltip contentStyle={{ background: '#0d1526', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
+                <Tooltip contentStyle={{ background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
                   labelFormatter={(d) => `Day ${d} of epoch`}
                   formatter={(v, n) => [fmt(Number(v), metric.format, metric.unit), n.replace('epoch', 'Epoch ')]} />
                 {cycles.epochs.map(e => (
@@ -235,7 +235,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                   tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={56} />
                 <YAxis tickFormatter={(v) => compact(v)}
                   tick={{ fill: 'var(--text-faint)', fontSize: 11 }} width={64} />
-                <Tooltip contentStyle={{ background: '#0d1526', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
+                <Tooltip contentStyle={{ background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
                   cursor={{ fill: 'rgba(255,255,255,0.04)' }}
                   labelFormatter={(p) => `Acquired $${compact(Number(p))} – $${compact(Number(p) + urpd.width)}`}
                   formatter={(v) => [compact(Number(v)) + ' BTC', 'Supply']} />
@@ -263,7 +263,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             <AreaChart data={rows} stackOffset="expand" margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <XAxis dataKey="day" tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={60} />
               <YAxis tickFormatter={(v) => (v * 100).toFixed(0) + '%'} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} />
-              <Tooltip contentStyle={{ background: '#0d1526', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
+              <Tooltip contentStyle={{ background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
                 formatter={(v, n) => [(v * 100).toFixed(2) + '%', n]} />
               {waveKeys.map((k, i) => (
                 <Area key={k} dataKey={k} stackId="1" stroke="none"
@@ -288,7 +288,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
               {!logScale && (metric.zones ?? []).map((z, i) => z.tone === 'line'
                 ? <ReferenceLine key={i} yAxisId="m" y={z.from} stroke="var(--text-faint)" strokeDasharray="4 4" />
                 : <ReferenceArea key={i} yAxisId="m" y1={z.from} y2={z.to} fill={toneColor(z.tone)} stroke="none" />)}
-              <Tooltip contentStyle={{ background: '#0d1526', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
+              <Tooltip contentStyle={{ background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
                 formatter={(v, n) => [fmt(Number(v), n === 'price' ? 'usd' : metric.format, metric.unit), seriesLabel(n)]} />
               {(data.columns ?? []).map((c, i) => (
                 <Line key={c} yAxisId="m" dataKey={c} dot={false} isAnimationActive={false}

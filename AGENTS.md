@@ -114,8 +114,15 @@ web/src/
   chrome). No localStorage/sessionStorage anywhere. Chart heights are CSS-owned
   (`.chartwrap` per breakpoint) — never a fixed recharts height prop. Every
   chart keeps the `.chart-watermark`. Colors/typography come from CSS variables
-  in `theme.css`; brand: navy `--ink-deep`, aurora `--aurora`, BTC orange
-  reserved for price/coin.
+  in `theme.css`, aligned to the Strive brand system: ink surfaces (`--ink`),
+  bone text (`--bone`), slate secondary (`--text-dim`/`--text-faint`), hairline
+  borders (`--ink-line`), and Bitcoin orange (`--orange` = `--btc`) as the ONE
+  reserved accent (price, the wordmark's em, section eyebrows, editorial links,
+  focus ring — never buttons or chrome; CTAs are bone-filled pills). Green/
+  blue/red (`--aurora`/`--cold`/`--hot`) are chart-data and status colors only.
+  Type: Instrument Serif for display headings (weight 400 only), IBM Plex Sans
+  for UI, IBM Plex Mono for data — all self-hosted woff2 in `web/public/fonts`
+  via `web/src/fonts.css`.
 - **No em-dashes in user-facing copy** (web page/component prose, catalog
   descriptions and zone copy, `apiReference.js` text): use commas, colons,
   semicolons, or parentheses instead. The lone "—" glyph as a missing-value
