@@ -149,10 +149,8 @@ export default function App() {
             investment advice or an offer of any security or investment product. Consult your own
             investment and tax advisors.
             <div className="foot-network">
-              A <a href="https://tnorth.com" target="_blank" rel="noopener">True North</a> Media
-              Network property · Powered by <a href="https://strive.com" target="_blank" rel="noopener">Strive</a>
+              Powered by <a href="https://strive.com" target="_blank" rel="noopener">Strive</a>
             </div>
-            <div className="foot-links"><a href="#/admin">Admin</a></div>
           </div>
         </footer>
       )}
