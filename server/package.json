@@ -10,6 +10,7 @@
     "start": "node src/api.js",
     "worker": "node src/sync.js",
     "migrate": "node src/migrate.js",
+    "reset:chain": "node scripts/reset-chain-data.js",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "node --test test/unit.*.test.js",
     "test:integration": "node --test --test-concurrency=1 test/integration.*.test.js",

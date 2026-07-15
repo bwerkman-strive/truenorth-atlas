@@ -38,6 +38,44 @@ export async function tipHeight() {
 }
 
 // ---------------------------------------------------------------------------
+// Single-writer guarantee. Platform deploys overlap (the outgoing instance
+// keeps running while the new one boots), and two workers racing the same
+// database can pollute day-boundary snapshots and misprice spends through a
+// stale in-memory block index. A session-scoped advisory lock serializes
+// them: the new instance waits here until the previous one exits. The lock
+// lives on a dedicated connection held for the life of the process, and
+// Postgres releases it automatically if that session dies.
+export const SYNC_LOCK_KEY = 0x41544c53; // 'ATLS'
+let lockClient = null;
+
+export async function acquireSyncLock() {
+  lockClient = await pool.connect();
+  lockClient.on('error', (e) => {
+    // The lock rides this session: if the connection is gone the lock is
+    // free and another worker could start writing. Exit so the platform
+    // restarts us and we re-acquire cleanly.
+    log.fatal({ err: e.message }, 'sync write-lock connection lost; exiting');
+    process.exit(1);
+  });
+  const attempt = await lockClient.query(
+    'SELECT pg_try_advisory_lock($1) AS ok', [SYNC_LOCK_KEY]);
+  if (!attempt.rows[0].ok) {
+    log.warn('another sync worker holds the write lock; waiting for it to exit');
+    await lockClient.query('SELECT pg_advisory_lock($1)', [SYNC_LOCK_KEY]);
+  }
+  log.info('single-writer lock acquired');
+}
+
+// Test hook: production never releases (process exit does).
+export async function releaseSyncLock() {
+  if (!lockClient) return;
+  await lockClient.query('SELECT pg_advisory_unlock($1)', [SYNC_LOCK_KEY]);
+  lockClient.removeAllListeners('error');
+  lockClient.release();
+  lockClient = null;
+}
+
+// ---------------------------------------------------------------------------
 // Reorg handling: verify our stored hash for recent heights against the node;
 // if they diverge, roll everything above the fork point back.
 export async function checkReorg() {
@@ -216,6 +254,7 @@ export async function pruneSpent(tip) {
 
 // ---------------------------------------------------------------------------
 export async function main() {
+  await acquireSyncLock(); // before any write, including migrate
   await migrate();
   log.info('schema ready');
   if (process.env.SKIP_PRICE_SYNC !== '1') {
