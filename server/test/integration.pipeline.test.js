@@ -381,7 +381,10 @@ test('API serves catalog, latest, and series from the synced data', async () => 
     const health = await j('/api/health');
     assert.equal(health.ok, true);
 
-    const status = await j('/api/status');
+    const statusRes = await fetch(`http://127.0.0.1:${port}/api/status`);
+    // /api/status backs the header's live sync counter — short cache only.
+    assert.match(statusRes.headers.get('cache-control'), /max-age=30\b/);
+    const status = await statusRes.json();
     assert.equal(Number(status.syncedHeight), 4);
     assert.equal(status.latestMetricsDay, D2);
     assert.equal(status.metricsDays, 2);

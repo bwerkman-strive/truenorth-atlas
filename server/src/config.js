@@ -48,6 +48,7 @@ export const config = {
   port: int('PORT', 8080),
   corsOrigin: env('CORS_ORIGIN', '*'),                // set to https://tnorth.com in prod
   apiCacheSeconds: int('API_CACHE_SECONDS', 300),
+  statusCacheSeconds: int('STATUS_CACHE_SECONDS', 30), // /api/status only: header sync counter wants freshness
 
   // --- Shareable chart cards / alerts / links ---
   publicSiteUrl: env('PUBLIC_SITE_URL', 'https://atlas.tnorth.com'), // the frontend

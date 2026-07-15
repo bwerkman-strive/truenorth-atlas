@@ -130,7 +130,9 @@ app.get('/api/status', async (_req, res) => {
       pool.query('SELECT MAX(day)::text d FROM metrics_daily'),
       pool.query('SELECT COUNT(*)::int c FROM metrics_daily'),
     ]);
-    cache(res);
+    // Shorter TTL than the general API cache: the header polls this for the
+    // live sync height, and three MAX/COUNT lookups are cheap to serve.
+    res.set('Cache-Control', `public, max-age=${config.statusCacheSeconds}`);
     res.json({
       features: {
         alertSignup: config.alertSignupEnabled,

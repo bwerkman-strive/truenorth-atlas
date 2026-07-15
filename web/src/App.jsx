@@ -41,11 +41,22 @@ export default function App() {
     Promise.all([api.catalog(), api.latest(), api.status()])
       .then(([c, l, s]) => { setCatalog(c); setLatest(l); setStatus(s); })
       .catch(e => setErr(e.message));
+    // Metrics only change once per UTC day; the sync height moves block by
+    // block, so it refreshes on its own faster cadence (visible tabs only).
     const t = setInterval(() => {
       api.latest().then(setLatest).catch(() => {});
-      api.status().then(setStatus).catch(() => {});
     }, 5 * 60 * 1000);
-    return () => clearInterval(t);
+    const tickStatus = () => {
+      if (document.visibilityState === 'hidden') return;
+      api.status().then(setStatus).catch(() => {});
+    };
+    const s = setInterval(tickStatus, 60_000);
+    document.addEventListener('visibilitychange', tickStatus);
+    return () => {
+      clearInterval(t);
+      clearInterval(s);
+      document.removeEventListener('visibilitychange', tickStatus);
+    };
   }, []);
 
   const metricForTitle = route.page === 'metric' && catalog
@@ -65,10 +76,18 @@ export default function App() {
   const [spot, setSpot] = useState(null);
   useEffect(() => {
     let alive = true;
-    const tick = () => api.spot().then(s => alive && s.price && setSpot(s)).catch(() => {});
+    const tick = () => {
+      if (document.visibilityState === 'hidden') return;
+      api.spot().then(s => alive && s.price && setSpot(s)).catch(() => {});
+    };
     tick();
     const t = setInterval(tick, 60_000);
-    return () => { alive = false; clearInterval(t); };
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      alive = false;
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', tick);
+    };
   }, []);
 
   const open = useCallback((slug) => { window.location.hash = `#/m/${slug}`; window.scrollTo(0, 0); }, []);
