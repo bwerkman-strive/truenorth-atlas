@@ -16,6 +16,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY src ./src
+COPY scripts ./scripts
 COPY worker-entrypoint.sh ./
 RUN chmod +x worker-entrypoint.sh
 
