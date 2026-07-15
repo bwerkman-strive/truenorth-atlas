@@ -151,6 +151,9 @@ export default function App() {
             <div className="foot-network">
               Powered by <a href="https://strive.com" target="_blank" rel="noopener">Strive</a>
             </div>
+            <div className="foot-copyright">
+              © 2026 Strive, Inc. All rights reserved.
+            </div>
           </div>
         </footer>
       )}

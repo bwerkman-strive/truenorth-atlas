@@ -274,6 +274,7 @@ body::before {
 .foot-network { margin-top: 12px; }
 .foot-network a { color: var(--text-dim); text-decoration: none; }
 .foot-network a:hover { color: var(--aurora); }
+.foot-copyright { margin-top: 8px; color: var(--text-faint); }
 
 /* ---------- Epoch Rings mark ---------- */
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
