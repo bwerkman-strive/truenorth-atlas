@@ -37,6 +37,19 @@ test('number appends unit', () => {
   assert.equal(fmt(645_000, 'number', 'BTC'), '645.0K BTC');
 });
 
+test('numeric strings (API serializes Postgres numerics as strings)', () => {
+  assert.equal(fmt('0', 'number'), '0.00');           // crashed pre-fix: "0".toFixed
+  assert.equal(fmt('170.147', 'number', 'BTC·days'), '170 BTC·days');
+  assert.equal(fmt('0', 'usd'), '$0.00');             // 2009-era zero closes
+  assert.equal(fmt('64123.4', 'usd'), '$64,123');
+  assert.equal(fmt('2.4567', 'ratio'), '2.46');
+  assert.equal(fmt('0.734', 'percent'), '73.4%');
+  assert.equal(fmt('650000000000', 'usd_compact'), '$650.00B');
+  assert.equal(compact('1234'), '1.2K');
+  assert.equal(fmt('', 'ratio'), '—');
+  assert.equal(fmt('not-a-number', 'ratio'), '—');
+});
+
 test('compact edge behavior', () => {
   assert.equal(compact(9.87), '9.87');
   assert.equal(compact(42), '42');
