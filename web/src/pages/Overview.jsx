@@ -35,11 +35,6 @@ export default function Overview({ catalog, latest, onOpen }) {
       <div className="hero wrap">
         <p className="eyebrow">Navigating the Bitcoin Ledger</p>
         <h1>Atlas <span className="h1-sub">/ Bitcoin On-Chain Analytics</span></h1>
-        <p>
-          Institutional-grade metrics computed directly from a fully-validating Bitcoin node,
-          with no third-party data vendors between you and the ledger.{' '}
-          <span className="free">Free, for the community.</span>
-        </p>
         <p className="dial-legend">
           Each card's <strong>bearing dial</strong> shows where today's reading sits in the
           metric's entire history: <span className="lg-cold">blue</span> = historically

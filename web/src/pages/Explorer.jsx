@@ -74,7 +74,7 @@ function ExplorerHome() {
         <h1>Block Explorer</h1>
         <p>
           Search blocks, transactions, and addresses, served from the same fully-validating
-          node behind the analytics. <span className="free">Free, for the community.</span>
+          node behind the analytics.
         </p>
       </div>
       <div className="wrap">

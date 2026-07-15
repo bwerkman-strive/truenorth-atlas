@@ -56,7 +56,6 @@ button { font-family: inherit; }
 .hero { padding: 34px 0 8px; }
 .hero h1 { font-family: var(--font-display); font-size: clamp(24px, 3.4vw, 34px); font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
 .hero p { color: var(--text-dim); max-width: 720px; margin: 0; }
-.hero .free { color: var(--aurora); }
 
 /* ---------- category nav ---------- */
 .catnav { display: flex; gap: 8px; overflow-x: auto; padding: 18px 0 4px; scrollbar-width: none; }
