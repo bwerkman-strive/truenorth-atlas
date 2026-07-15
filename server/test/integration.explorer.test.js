@@ -28,16 +28,16 @@ const HASH1 = 'e1'.repeat(32), HASH2 = 'e2'.repeat(32);
 
 const BLOCKS = {
   [HASH1]: {
-    hash: HASH1, height: 1, time: T0, size: 285, weight: 1140, version: 1,
+    hash: HASH1, height: 1, time: T0, mediantime: T0 - 300, size: 285, weight: 1140, version: 1,
     merkleroot: 'ab'.repeat(32), nonce: 1, bits: '1d00ffff', difficulty: 1,
-    previousblockhash: '00'.repeat(32),
+    previousblockhash: '00'.repeat(32), nextblockhash: HASH2,
     tx: [{
       txid: TX_CB1, vin: [{ coinbase: '01' }],
       vout: [{ n: 0, value: 50, scriptPubKey: { type: 'v0_p2wpkh', address: ADDR1 } }],
     }],
   },
   [HASH2]: {
-    hash: HASH2, height: 2, time: T0 + 600, size: 500, weight: 2000, version: 1,
+    hash: HASH2, height: 2, time: T0 + 600, mediantime: T0 + 300, size: 500, weight: 2000, version: 1,
     merkleroot: 'cd'.repeat(32), nonce: 2, bits: '1d00ffff', difficulty: 1,
     previousblockhash: HASH1,
     tx: [
@@ -46,10 +46,16 @@ const BLOCKS = {
         vout: [{ n: 0, value: 50.0001, scriptPubKey: { type: 'v0_p2wpkh', address: ADDR1 } }],
       },
       {
-        txid: TX_SPEND,
-        vin: [{ txid: TX_CB1, vout: 0, prevout: { value: 50, height: 1, scriptPubKey: { address: ADDR1 } } }],
+        // Field shapes mirror real Core getblock verbosity=3 output.
+        txid: TX_SPEND, version: 2, locktime: 0, size: 222, vsize: 141, weight: 561, fee: 0.0001,
+        vin: [{
+          txid: TX_CB1, vout: 0, sequence: 4294967293,
+          scriptSig: { asm: '', hex: '' },
+          txinwitness: ['304402aa01', '0299bb'],
+          prevout: { value: 50, height: 1, scriptPubKey: { address: ADDR1 } },
+        }],
         vout: [
-          { n: 0, value: 20, scriptPubKey: { type: 'pubkeyhash', address: ADDR2 } },
+          { n: 0, value: 20, scriptPubKey: { type: 'pubkeyhash', address: ADDR2, asm: 'OP_DUP OP_HASH160 aa OP_EQUALVERIFY OP_CHECKSIG' } },
           { n: 1, value: 29.9999, scriptPubKey: { type: 'v0_p2wpkh', address: ADDR1 } },
         ],
       },
@@ -57,6 +63,7 @@ const BLOCKS = {
   },
 };
 
+let getblockCalls = 0; // proves the serialized-block cache short-circuits repeat views
 const mock = http.createServer((req, res) => {
   const chunks = [];
   req.on('data', c => chunks.push(c));
@@ -72,6 +79,7 @@ const mock = http.createServer((req, res) => {
         return h === 1 ? reply(HASH1) : h === 2 ? reply(HASH2) : fail(-8, 'Block height out of range');
       }
       case 'getblock': {
+        getblockCalls++;
         const b = BLOCKS[body.params[0]];
         return b ? reply(b) : fail(-5, 'Block not found');
       }
@@ -147,14 +155,63 @@ test('block lookup by height and by hash, RPC-enriched with full txids', async (
   assert.equal(byH.hash, HASH2);
   assert.equal(byH.tx_count, 2);
   assert.equal(byH.fees_sat, 10000, '0.0001 BTC fee recorded by sync');
+  assert.equal(byH.confirmations, 1, 'tip block has 1 confirmation');
   assert.equal(byH.rpc, true);
   assert.deepEqual(byH.detail.txids, [TX_CB2, TX_SPEND]);
+  assert.equal(byH.detail.mediantime, T0 + 300);
 
   const byHash = (await getJson(`/api/explorer/block/${HASH1}`)).body;
   assert.equal(byHash.height, 1);
+  assert.equal(byHash.confirmations, 2);
 
   assert.equal((await get('/api/explorer/block/999999')).status, 404);
   assert.equal((await get('/api/explorer/block/not-a-block')).status, 400);
+});
+
+test('block tx summaries: amounts and fees from the verbosity-3 payload', async () => {
+  const b = (await getJson('/api/explorer/block/2')).body;
+  assert.equal(b.tx_start, 0);
+  assert.equal(b.txs.length, 2);
+
+  const [cb, spend] = b.txs;
+  assert.equal(cb.txid, TX_CB2);
+  assert.equal(cb.coinbase, true);
+  assert.equal(cb.fee_sat, null, 'coinbase pays no fee');
+  assert.deepEqual(cb.inputs, []);
+  assert.equal(cb.outputs[0].address, ADDR1);
+
+  assert.equal(spend.txid, TX_SPEND);
+  assert.equal(spend.coinbase, false);
+  assert.equal(spend.fee_sat, 10000);
+  assert.equal(spend.vsize, 141);
+  assert.equal(spend.total_out_btc, 49.9999);
+  assert.equal(spend.in_count, 1);
+  assert.equal(spend.out_count, 2);
+  assert.equal(spend.inputs[0].address, ADDR1);
+  assert.equal(spend.inputs[0].value_btc, 50);
+  assert.equal(spend.outputs[0].address, ADDR2);
+
+  // Pagination: ?txstart slices the summary list; txids stay complete.
+  const p1 = (await getJson('/api/explorer/block/2?txstart=1')).body;
+  assert.equal(p1.tx_start, 1);
+  assert.deepEqual(p1.txs.map(t => t.txid), [TX_SPEND]);
+  assert.equal(p1.detail.txids.length, 2);
+  const past = (await getJson('/api/explorer/block/2?txstart=50')).body;
+  assert.deepEqual(past.txs, []);
+});
+
+test('serialized-block cache: repeat views of a non-tip block skip the node', async () => {
+  await getJson(`/api/explorer/block/${HASH1}`); // warm (block 1 has a nextblockhash)
+  const before = getblockCalls;
+  const again = (await getJson('/api/explorer/block/1')).body;
+  assert.equal(getblockCalls, before, 'served from cache, no getblock call');
+  assert.equal(again.rpc, true);
+  assert.deepEqual(again.detail.txids, [TX_CB1]);
+
+  // The tip block is never cached (its nextblockhash is still changing).
+  const b2 = getblockCalls;
+  await getJson('/api/explorer/block/2');
+  assert.ok(getblockCalls > b2, 'tip block re-fetched');
 });
 
 test('tx lookup succeeds WITHOUT txindex via the UTXO-table blockhash fallback', async () => {
@@ -172,6 +229,37 @@ test('tx lookup succeeds WITHOUT txindex via the UTXO-table blockhash fallback',
 
   assert.equal((await get(`/api/explorer/tx/${'ab'.repeat(32)}`)).status, 404);
   assert.equal((await get('/api/explorer/tx/xyz')).status, 400);
+});
+
+test('tx detail: fee, sizes, RBF, scripts, and confirmations', async () => {
+  const t = (await getJson(`/api/explorer/tx/${TX_SPEND}`)).body;
+  assert.equal(t.confirmations, 1);
+  assert.equal(t.fee_sat, 10000);
+  assert.equal(t.fee_rate, 70.92, '10000 sat / 141 vB');
+  assert.equal(t.size, 222);
+  assert.equal(t.vsize, 141);
+  assert.equal(t.weight, 561);
+  assert.equal(t.version, 2);
+  assert.equal(t.locktime, 0);
+  assert.equal(t.rbf, true, 'sequence 0xfffffffd signals replaceability');
+  assert.equal(t.total_in_btc, 50);
+  assert.equal(t.total_out_btc, 49.9999);
+
+  const i = t.inputs[0];
+  assert.equal(i.sequence, 4294967293);
+  assert.equal(i.scriptsig_asm, '');
+  assert.deepEqual(i.witness, ['304402aa01', '0299bb']);
+
+  assert.equal(t.outputs[0].type, 'pubkeyhash');
+  assert.match(t.outputs[0].scriptpubkey_asm, /OP_CHECKSIG/);
+  assert.equal(t.outputs[1].scriptpubkey_asm, null, 'asm absent from the node stays null');
+
+  // Coinbase: no fee, no RBF, empty-input semantics preserved.
+  const cb = (await getJson(`/api/explorer/tx/${TX_CB2}`)).body;
+  assert.equal(cb.coinbase, true);
+  assert.equal(cb.fee_sat, null);
+  assert.equal(cb.rbf, null);
+  assert.deepEqual(cb.inputs, [{ coinbase: true }]);
 });
 
 test('search dispatches height, hash, txid, address, and garbage correctly', async () => {
@@ -286,10 +374,13 @@ test('admin-panel API reference examples match live response shapes', async () =
 
   const keysOf = (o) => Object.keys(o).sort();
 
-  // block — top-level and RPC detail keys
+  // block — top-level, RPC detail, and tx-summary keys
   const liveBlock = (await getJson('/api/explorer/block/2')).body;
   assert.deepEqual(keysOf(doc.block.response), keysOf(liveBlock), 'block: top-level keys');
   assert.deepEqual(keysOf(doc.block.response.detail), keysOf(liveBlock.detail), 'block: detail keys');
+  assert.deepEqual(keysOf(doc.block.response.txs[0]), keysOf(liveBlock.txs[0]), 'block: tx summary keys');
+  assert.deepEqual(keysOf(doc.block.response.txs[1].inputs[0]), keysOf(liveBlock.txs[1].inputs[0]), 'block: tx summary input keys');
+  assert.deepEqual(keysOf(doc.block.response.txs[0].outputs[0]), keysOf(liveBlock.txs[0].outputs[0]), 'block: tx summary output keys');
 
   // tx — top-level, input, and output keys
   const liveTx = (await getJson(`/api/explorer/tx/${TX_SPEND}`)).body;

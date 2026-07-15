@@ -25,7 +25,8 @@ async function authed(method, path, token, body) {
 export const api = {
   catalog: () => get('/api/catalog'),
   explorerSearch: (q) => get('/api/explorer/search?q=' + encodeURIComponent(q)),
-  explorerBlock: (id) => get('/api/explorer/block/' + encodeURIComponent(id)),
+  explorerBlock: (id, txstart = 0) =>
+    get('/api/explorer/block/' + encodeURIComponent(id) + (txstart ? `?txstart=${txstart}` : '')),
   explorerTx: (txid) => get('/api/explorer/tx/' + encodeURIComponent(txid)),
   explorerAddress: (a) => get('/api/explorer/address/' + encodeURIComponent(a)),
   explorerRecent: () => get('/api/explorer/blocks/recent'),

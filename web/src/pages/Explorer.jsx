@@ -102,16 +102,66 @@ function ExplorerHome() {
 }
 
 // ---------------------------------------------------------------------------
+const TX_PAGE = 25;
+
+// One transaction inside a block listing: txid + fee up top, then the
+// input -> output flow with amounts (previews capped server-side; the
+// counts carry the true totals).
+function TxCard({ t }) {
+  const feeNote = t.coinbase ? 'coinbase'
+    : t.fee_sat != null
+      ? `fee ${t.fee_sat.toLocaleString()} sat${t.vsize ? ` · ${(t.fee_sat / t.vsize).toFixed(1)} sat/vB` : ''}`
+      : '';
+  return (
+    <div className="xtxcard">
+      <div className="xtxhead">
+        <a className="mono" href={`#/tx/${t.txid}`}>{mid(t.txid, 16)}</a>
+        <span className="xmeta">{feeNote}{feeNote && ' · '}{btc(t.total_out_btc)}</span>
+      </div>
+      <div className="xsplit">
+        <div>
+          {t.coinbase && <div className="xioline">New coins (subsidy + fees)</div>}
+          {!t.coinbase && t.inputs.map((i, n) => (
+            <div className="xioline" key={n}>
+              <span className="mono">{i.address ? <a href={`#/a/${i.address}`}>{mid(i.address, 8)}</a> : 'non-standard'}</span>
+              <span className="xamt">{i.value_btc != null ? btc(i.value_btc) : ''}</span>
+            </div>
+          ))}
+          {!t.coinbase && t.in_count > t.inputs.length && (
+            <div className="xioline xmeta">…{(t.in_count - t.inputs.length).toLocaleString()} more inputs</div>
+          )}
+        </div>
+        <div>
+          {t.outputs.map((o, n) => (
+            <div className="xioline" key={n}>
+              <span className="mono">{o.address ? <a href={`#/a/${o.address}`}>{mid(o.address, 8)}</a> : 'non-standard'}</span>
+              <span className="xamt">{o.value_btc != null ? btc(o.value_btc) : ''}</span>
+            </div>
+          ))}
+          {t.out_count > t.outputs.length && (
+            <div className="xioline xmeta">…{(t.out_count - t.outputs.length).toLocaleString()} more outputs</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BlockView({ id }) {
   const [b, setB] = useState(null);
   const [err, setErr] = useState(null);
+  const [page, setPage] = useState(0);
   useEffect(() => {
-    setB(null); setErr(null);
-    api.explorerBlock(id).then(setB).catch(e => setErr(e.message));
-  }, [id]);
+    setErr(null);
+    api.explorerBlock(id, page * TX_PAGE).then(setB).catch(e => setErr(e.message));
+  }, [id, page]);
 
   if (err) return <div className="wrap"><div className="err">Block not found: {err}</div></div>;
   if (!b) return <div className="wrap"><div className="loading">Loading block…</div></div>;
+  const d = b.detail;
+  const vsize = d?.weight ? Math.ceil(d.weight / 4) : null;
+  const txFrom = page * TX_PAGE;
+  const hasPager = b.txs && b.tx_count > TX_PAGE;
   return (
     <div className="wrap">
       <div className="detail-hd">
@@ -121,35 +171,48 @@ function BlockView({ id }) {
       <div className="xcard">
         <Row label="Hash" monoValue>{b.hash}</Row>
         <Row label="Time">{when(b.time)}</Row>
+        {b.confirmations != null &&
+          <Row label="Confirmations">{b.confirmations.toLocaleString()}</Row>}
         <Row label="Transactions">{b.tx_count?.toLocaleString?.() ?? '—'}</Row>
         <Row label="Subsidy">{sat2btc(b.subsidy_sat)}</Row>
         <Row label="Fees">{sat2btc(b.fees_sat)}</Row>
         <Row label="Difficulty">{b.difficulty ? compact(b.difficulty) : '—'}</Row>
-        {b.detail && <>
-          <Row label="Size / Weight">{b.detail.size?.toLocaleString()} B / {b.detail.weight?.toLocaleString()} WU</Row>
-          <Row label="Merkle root" monoValue>{mid(b.detail.merkleroot)}</Row>
-          <Row label="Previous block" monoValue>
-            <a href={`#/b/${b.detail.previousblockhash}`}>{mid(b.detail.previousblockhash)}</a>
+        {d && <>
+          <Row label="Size / Weight">
+            {d.size?.toLocaleString()} B / {d.weight?.toLocaleString()} WU{vsize ? ` (${vsize.toLocaleString()} vB)` : ''}
           </Row>
-          {b.detail.nextblockhash &&
+          {d.mediantime != null && <Row label="Median time">{when(d.mediantime)}</Row>}
+          <Row label="Version / Bits / Nonce" monoValue>
+            0x{d.version?.toString(16)} / {d.bits} / {d.nonce?.toLocaleString()}
+          </Row>
+          <Row label="Merkle root" monoValue>{mid(d.merkleroot)}</Row>
+          <Row label="Previous block" monoValue>
+            <a href={`#/b/${d.previousblockhash}`}>{mid(d.previousblockhash)}</a>
+          </Row>
+          {d.nextblockhash &&
             <Row label="Next block" monoValue>
-              <a href={`#/b/${b.detail.nextblockhash}`}>{mid(b.detail.nextblockhash)}</a>
+              <a href={`#/b/${d.nextblockhash}`}>{mid(d.nextblockhash)}</a>
             </Row>}
         </>}
       </div>
-      {b.detail?.txids && (
+      {b.txs && b.txs.length > 0 && (
         <>
-          <div className="sec"><h2>Transactions <span>{b.detail.txids.length.toLocaleString()}</span></h2></div>
+          <div className="sec"><h2>Transactions <span>
+            {b.tx_count > TX_PAGE
+              ? `${(txFrom + 1).toLocaleString()}–${(txFrom + b.txs.length).toLocaleString()} of ${b.tx_count.toLocaleString()}`
+              : b.tx_count.toLocaleString()}
+          </span></h2></div>
           <div className="xcard">
-            {b.detail.txids.slice(0, 200).map(t => (
-              <div className="xrow" key={t}>
-                <div className="xval mono"><a href={`#/tx/${t}`}>{mid(t, 20)}</a></div>
-              </div>
-            ))}
-            {b.detail.txids.length > 200 && (
-              <div className="xrow"><div className="xval">…and {(b.detail.txids.length - 200).toLocaleString()} more.</div></div>
-            )}
+            {b.txs.map(t => <TxCard key={t.txid} t={t} />)}
           </div>
+          {hasPager && (
+            <div className="xpager">
+              <button onClick={() => setPage(p => p - 1)} disabled={page === 0}>← Previous</button>
+              <span>page {(page + 1).toLocaleString()} of {Math.ceil(b.tx_count / TX_PAGE).toLocaleString()}</span>
+              <button onClick={() => setPage(p => p + 1)}
+                disabled={txFrom + b.txs.length >= b.tx_count}>Next →</button>
+            </div>
+          )}
         </>
       )}
       {!b.rpc && (
@@ -166,14 +229,15 @@ function BlockView({ id }) {
 function TxView({ txid }) {
   const [t, setT] = useState(null);
   const [err, setErr] = useState(null);
+  const [scripts, setScripts] = useState(false);
   useEffect(() => {
-    setT(null); setErr(null);
+    setT(null); setErr(null); setScripts(false);
     api.explorerTx(txid).then(setT).catch(e => setErr(e.message));
   }, [txid]);
 
   if (err) return <div className="wrap"><div className="err">Transaction not found: {err}</div></div>;
   if (!t) return <div className="wrap"><div className="loading">Loading transaction…</div></div>;
-  const totalOut = (t.outputs ?? []).reduce((a, o) => a + (o.value_btc ?? 0), 0);
+  const unconfirmed = t.block_height === null && t.rpc;
   return (
     <div className="wrap">
       <div className="detail-hd">
@@ -182,16 +246,38 @@ function TxView({ txid }) {
       </div>
       <div className="xcard">
         <Row label="Transaction ID" monoValue>{t.txid}</Row>
+        <Row label="Status">{unconfirmed
+          ? 'Unconfirmed (in mempool)'
+          : t.confirmations != null
+            ? `Confirmed · ${t.confirmations.toLocaleString()} confirmation${t.confirmations === 1 ? '' : 's'}`
+            : 'Confirmed'}</Row>
         <Row label="Block">{t.block_height !== null
-          ? <a href={`#/b/${t.block_height}`}>{t.block_height.toLocaleString()}</a> : 'unconfirmed / unknown'}</Row>
+          ? <a href={`#/b/${t.block_height}`}>{t.block_height.toLocaleString()}</a> : '—'}</Row>
         <Row label="Time">{when(t.time)}</Row>
         <Row label="Type">{t.coinbase ? 'Coinbase (block reward)' : 'Transfer'}</Row>
-        <Row label="Total output">{btc(totalOut)}</Row>
+        {t.fee_sat != null && (
+          <Row label="Fee">{t.fee_sat.toLocaleString()} sat{t.fee_rate != null ? ` (${t.fee_rate} sat/vB)` : ''}</Row>
+        )}
+        {t.size != null && (
+          <Row label="Size">{t.size.toLocaleString()} B · {t.vsize?.toLocaleString()} vB · {t.weight?.toLocaleString()} WU</Row>
+        )}
+        {t.version != null && <Row label="Version / Locktime">{t.version} / {t.locktime}</Row>}
+        {t.rbf != null && <Row label="Replaceable (RBF)">{t.rbf ? 'Yes (BIP-125 signaled)' : 'No'}</Row>}
+        {t.total_in_btc != null && <Row label="Total input">{btc(t.total_in_btc)}</Row>}
+        <Row label="Total output">{btc(t.total_out_btc)}</Row>
       </div>
+
+      {t.rpc && (
+        <div className="xsec-flex">
+          <button className="xtoggle" onClick={() => setScripts(s => !s)}>
+            {scripts ? 'Hide script details' : 'Show script details'}
+          </button>
+        </div>
+      )}
 
       <div className="xsplit">
         <div>
-          <div className="sec"><h2>Inputs</h2></div>
+          <div className="sec"><h2>Inputs {t.inputs && <span>{t.inputs.length.toLocaleString()}</span>}</h2></div>
           <div className="xcard">
             {t.coinbase && <div className="xrow"><div className="xval">New coins (block subsidy + fees)</div></div>}
             {!t.coinbase && (t.inputs ?? []).map((i, n) => (
@@ -199,6 +285,11 @@ function TxView({ txid }) {
                 <div className="xval">
                   <span className="mono">{i.address ? <a href={`#/a/${i.address}`}>{mid(i.address, 10)}</a> : mid(i.txid, 10) + ':' + i.vout}</span>
                   <span className="xamt">{i.value_btc !== null ? btc(i.value_btc) : ''}</span>
+                  {scripts && <>
+                    <div className="xscript">outpoint {mid(i.txid, 8)}:{i.vout}{i.sequence != null ? ` · sequence ${i.sequence}` : ''}</div>
+                    {i.scriptsig_asm ? <div className="xscript">scriptSig: {i.scriptsig_asm}</div> : null}
+                    {(i.witness ?? []).map((w, k) => <div className="xscript" key={k}>witness[{k}]: {w}</div>)}
+                  </>}
                 </div>
               </div>
             ))}
@@ -208,16 +299,18 @@ function TxView({ txid }) {
           </div>
         </div>
         <div>
-          <div className="sec"><h2>Outputs</h2></div>
+          <div className="sec"><h2>Outputs {t.outputs && <span>{t.outputs.length.toLocaleString()}</span>}</h2></div>
           <div className="xcard">
             {(t.outputs ?? []).map(o => (
               <div className="xrow" key={o.n}>
                 <div className="xval">
                   <span className="mono">{o.address ? <a href={`#/a/${o.address}`}>{mid(o.address, 10)}</a> : 'non-standard'}</span>
                   <span className="xamt">{btc(o.value_btc)}
+                    {o.type && <em className="xtype">{o.type}</em>}
                     {o.spent === true && <em className="xspent"> spent</em>}
                     {o.spent === false && <em className="xunspent"> unspent</em>}
                   </span>
+                  {scripts && o.scriptpubkey_asm && <div className="xscript">{o.scriptpubkey_asm}</div>}
                 </div>
               </div>
             ))}
@@ -276,7 +369,7 @@ export default function Explorer({ view, param }) {
     return (
       <>
         <div className="wrap xsub-search"><SearchBox /></div>
-        {view === 'block' ? <BlockView id={param} />
+        {view === 'block' ? <BlockView key={param} id={param} />
           : view === 'tx' ? <TxView txid={param} />
           : <AddressView addr={param} />}
       </>
