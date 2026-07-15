@@ -38,14 +38,14 @@ export async function snapshotAndRollupDay(day, log) {
     FROM u GROUP BY 1`, [dayEnd, price]);
 
   let setSupply = 0, setRc = 0, profitBtc = 0;
-  let sthV = 0, sthRc = 0, lthV = 0, lthRc = 0;
+  let sthV = 0, sthRc = 0, lthV = 0, lthRc = 0, sthProfit = 0, lthProfit = 0;
   const waves = Object.fromEntries(WAVE_LABELS.map(l => [l, 0]));
   const rcWaves = Object.fromEntries(WAVE_LABELS.map(l => [l, 0]));
   for (const r of snap.rows) {
     const b = Number(r.b), v = Number(r.v_btc), rc = Number(r.rc_usd);
     setSupply += v; setRc += rc; profitBtc += Number(r.v_profit);
-    if (EDGES[b] !== undefined && EDGES[b] <= config.sthDays) { sthV += v; sthRc += rc; }
-    else { lthV += v; lthRc += rc; }
+    if (EDGES[b] !== undefined && EDGES[b] <= config.sthDays) { sthV += v; sthRc += rc; sthProfit += Number(r.v_profit); }
+    else { lthV += v; lthRc += rc; lthProfit += Number(r.v_profit); }
     waves[WAVE_LABELS[WAVE_OF[b]]] += v;
     rcWaves[WAVE_LABELS[WAVE_OF[b]]] += rc;
   }
@@ -130,10 +130,10 @@ export async function snapshotAndRollupDay(day, log) {
         miner_rev_usd, fees_pct_rev, hashrate_ehs, difficulty, thermocap, thermocap_multiple,
         balanced_price, transferred_price, nvt, tx_count, transfer_vol_btc, transfer_vol_usd,
         aviv, true_market_mean, sth_nupl, lth_nupl, sell_side_risk, rhodl, dormancy,
-        terminal_price, supply_1y_plus_pct)
+        terminal_price, supply_1y_plus_pct, sth_profit_pct, lth_profit_pct)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
         $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,
-        $40,$41,$42,$43,$44,$45,$46,$47,$48)
+        $40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50)
       ON CONFLICT (day) DO UPDATE SET price=EXCLUDED.price, market_cap=EXCLUDED.market_cap`,
       [day, price, supplyBtc, marketCap, realizedCap,
        realizedPrice, div(marketCap, realizedCap), marketCap > 0 ? (marketCap - realizedCap) / marketCap : null,
@@ -148,7 +148,7 @@ export async function snapshotAndRollupDay(day, log) {
        realizedPrice !== null && transferredPrice !== null ? realizedPrice - transferredPrice : null,
        transferredPrice, div(marketCap, volUsd), Number(blk.txs), Number(f.vol), volUsd,
        aviv, trueMarketMean, sthNupl, lthNupl, sellSideRisk, rhodl, dormancy,
-       terminalPrice, supply1yPlus]);
+       terminalPrice, supply1yPlus, div(sthProfit, sthV), div(lthProfit, lthV)]);
 
     // Window-derived metrics need history: compute in one follow-up UPDATE.
     await client.query(`

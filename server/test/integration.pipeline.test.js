@@ -228,6 +228,20 @@ test('tier-1 metrics: cointime, cohort NUPL, sell-side risk, dormancy, price mod
   assert.ok(Math.abs(Number(r2.hashrate_60d) - expectHr) < 1e-24);
 });
 
+test('cohort supply in profit: STH breadth from the snapshot, LTH undefined pre-cohort', async () => {
+  const r1 = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D1])).rows[0];
+  const r2 = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D2])).rows[0];
+
+  // D1: everything was created at the day's own close; strict < means 0% in profit.
+  assert.equal(Number(r1.sth_profit_pct), 0);
+  assert.equal(r1.lth_profit_pct, null, 'no LTH supply exists yet');
+
+  // D2 at $200: the whole float (150 BTC) is STH; only the held 50 BTC from
+  // day 1 (basis $100) is in profit -> 1/3 of the cohort.
+  assert.ok(Math.abs(Number(r2.sth_profit_pct) - 50 / 150) < 1e-9);
+  assert.equal(r2.lth_profit_pct, null);
+});
+
 test('finalization is idempotent (re-running a day is a no-op)', async () => {
   const beforeRow = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D2])).rows[0];
   await snapshotAndRollupDay(D2, { info: () => {} });

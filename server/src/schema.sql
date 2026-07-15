@@ -152,7 +152,9 @@ CREATE TABLE IF NOT EXISTS metrics_daily (
   delta_price        NUMERIC,      -- USD; (realized cap - average cap) / supply
   hashrate_30d       NUMERIC,      -- EH/s, 30d SMA (hash ribbons)
   hashrate_60d       NUMERIC,      -- EH/s, 60d SMA (hash ribbons)
-  supply_1y_plus_pct NUMERIC       -- 0..1, share of supply dormant >= 1y
+  supply_1y_plus_pct NUMERIC,      -- 0..1, share of supply dormant >= 1y
+  sth_profit_pct     NUMERIC,      -- 0..1, share of STH supply in profit
+  lth_profit_pct     NUMERIC       -- 0..1, share of LTH supply in profit
 );
 -- Tier-1 metric additions (idempotent migration for databases created before them)
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS aviv NUMERIC;
@@ -167,6 +169,8 @@ ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS delta_price NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS hashrate_30d NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS hashrate_60d NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS supply_1y_plus_pct NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS sth_profit_pct NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS lth_profit_pct NUMERIC;
 
 -- Seed persistent counters
 INSERT INTO chain_state(key, value) VALUES

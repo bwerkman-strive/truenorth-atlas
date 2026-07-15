@@ -8,7 +8,7 @@ the ledger. Free, for the community.
   balanced price, AVIV & true market mean, terminal/delta price), profit & loss
   (SOPR family, realized P&L, supply in profit, sell-side risk), holder
   behavior (CDD, dormancy, liveliness, VDD, reserve risk, HODL waves, RHODL),
-  cohorts (STH/LTH supply, cost basis, MVRV, NUPL), mining (Puell, hashrate,
+  cohorts (STH/LTH supply, cost basis, MVRV, NUPL, supply in profit), mining (Puell, hashrate,
   hash ribbons, thermocap), and network (NVT, volume).
 - **Exact history, not approximations** — the sync worker snapshots the full
   UTXO set at every UTC day boundary while replaying the chain, so set-level
@@ -306,7 +306,7 @@ cd web && npm ci && npm run dev     # http://localhost:5173
 
 ## Testing
 
-105 tests (87 server, 18 web). The server has unit suites (subsidy schedule,
+106 tests (88 server, 18 web). The server has unit suites (subsidy schedule,
 catalog↔schema integrity, RPC transport) that run without a database, plus
 Postgres-backed integration
 suites that replay a synthetic chain against mock providers and verify the

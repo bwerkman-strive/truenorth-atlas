@@ -310,6 +310,22 @@ export const METRICS = [
     explain: 'The long-term cohort\'s paper P&L moves slowly, which makes its extremes reliable: readings above 0.75 mean veterans sit on enormous unrealized gains, historically preceding distribution. Negative readings, where even the most patient capital is underwater, have marked the terminal phase of every bear market.',
     method: '(Price − LTH cost basis) ÷ price. Equivalent to 1 − 1/LTH-MVRV.',
   },
+  {
+    slug: 'sth-supply-in-profit', column: 'sth_profit_pct', name: 'STH Supply in Profit', category: 'cohorts', ...pct,
+    zones: [
+      { from: 0, to: 0.1, label: 'Cohort washed out', tone: 'cold' },
+      { from: 0.95, to: 1, label: 'Every recent buyer whole', tone: 'hot' },
+    ],
+    short: 'The share of short-term holder coins sitting above their cost basis.',
+    explain: 'Breadth of profitability among the market\'s most reactive cohort. Readings pinned near zero mean virtually every recent buyer is underwater, the exhaustion condition from which bottoms form; readings above ~95% mean every dip-buyer is being paid, the fuel for momentum and, at extremes, for local tops.',
+    method: 'Share of supply younger than 155 days whose creation-day price is below the current close, from the daily UTXO snapshot.',
+  },
+  {
+    slug: 'lth-supply-in-profit', column: 'lth_profit_pct', name: 'LTH Supply in Profit', category: 'cohorts', ...pct,
+    short: 'The share of long-term holder coins sitting above their cost basis.',
+    explain: 'Long-term holders rarely fall underwater at all; when a meaningful share of this cohort slips into loss, the market has undercut even patient capital, historically the signature of late-stage bear markets and the zone where supply stops responding to price entirely.',
+    method: 'Share of supply aged 155 days or more whose creation-day price is below the current close, from the daily UTXO snapshot.',
+  },
 
   // ------------------------------------------------------------ mining
   {
