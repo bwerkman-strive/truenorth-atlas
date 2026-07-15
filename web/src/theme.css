@@ -307,7 +307,7 @@ body::before {
 /* ---------- watermark / subscribe ---------- */
 .chartbox { position: relative; }
 .chart-watermark {
-  position: absolute; right: 16px; bottom: 12px; z-index: 5; pointer-events: none; user-select: none;
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 5; pointer-events: none; user-select: none;
   font-family: var(--font-display); font-weight: 700; font-size: 12px; letter-spacing: .05em;
   color: var(--text); opacity: 0.34;
 }
@@ -381,7 +381,7 @@ body::before {
   .nl-group input { flex: 1; min-width: 0; }
   .nl-chart-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   .foot-subscribe .sub-form { max-width: none; }
-  .chart-watermark { font-size: 10.5px; right: 10px; bottom: 8px; }
+  .chart-watermark { font-size: 10.5px; }
   .chart-watermark span { display: none; } /* keep the lockup, drop the URL */
 }
 
