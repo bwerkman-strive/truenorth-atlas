@@ -121,6 +121,10 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   }, [data, metric, logScale]);
 
   const catName = categories.find(c => c.id === metric.category)?.name ?? '';
+  // Watermark only when a chart is actually on screen, never over loading/empty states.
+  const hasChart = !err && (view === 'cycles'
+    ? cycleRows.length > 0
+    : metric.kind === 'urpd' ? !!urpd : rows.length > 0);
   const waveKeys = metric.kind === 'stacked' && rows.length
     ? Object.keys(rows[rows.length - 1]).filter(k => k !== 'day') : [];
 
@@ -183,9 +187,11 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
       </div>
 
       <div className="chartbox">
-        <div className="chart-watermark" aria-hidden="true">
-          TRUE NORTH <em>ATLAS</em><span> · atlas.tnorth.com</span>
-        </div>
+        {hasChart && (
+          <div className="chart-watermark" aria-hidden="true">
+            TRUE NORTH <em>ATLAS</em><span> · tnorth.com</span>
+          </div>
+        )}
         {err && <div className="err">Could not load series: {err}</div>}
         {view === 'cycles' && !err && !cycles && <div className="loading">Aligning halving cycles…</div>}
         {view === 'cycles' && !err && cycles && cycleRows.length > 0 && (
