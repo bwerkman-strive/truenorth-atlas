@@ -1,6 +1,8 @@
-# Sync worker image for Render's Docker runtime (render.yaml: atlas-sync).
-# Bundles a Tor daemon so the worker can reach a Bitcoin node exposed as a
-# Tor hidden service (Start9/Umbrel) — Render's native Node runtime cannot
+# Shared server image for Render's Docker runtime, used by BOTH services:
+#   atlas-sync (worker) — default CMD, runs node src/sync.js
+#   atlas-api  (web)    — dockerCommand override in render.yaml runs node src/api.js
+# Bundles a Tor daemon so either service can reach a Bitcoin node exposed as
+# a Tor hidden service (Start9/Umbrel) — Render's native Node runtime cannot
 # run Tor, hence this image. See README "Connecting a Start9 node", pattern 2.
 FROM node:22-slim
 

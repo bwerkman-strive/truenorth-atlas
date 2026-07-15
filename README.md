@@ -62,10 +62,11 @@ Pick one of three connectivity patterns for the sync worker:
    `BITCOIN_RPC_URL=http://<your-onion>.onion:8332` and
    `TOR_SOCKS_PROXY=socks5h://<tor-daemon-host>:9050` (the `socks5h` scheme is
    required — it resolves .onion names through Tor). The Blueprint's
-   `atlas-sync` worker builds from `server/Dockerfile.worker`, which bundles a
-   Tor daemon in the container and presets `TOR_SOCKS_PROXY` to it — on Render
-   you only fill in the `.onion` URL and RPC credentials. Expect the initial
-   replay to be several times slower over Tor.
+   `atlas-sync` worker **and** `atlas-api` service both build from
+   `server/Dockerfile.worker`, which bundles a Tor daemon in the container and
+   presets `TOR_SOCKS_PROXY` to it — on Render you only fill in the `.onion`
+   URL and RPC credentials on each service. Expect the initial replay to be
+   several times slower over Tor.
 
 3. **VPN / tunnel.** Put the node's LAN RPC behind Tailscale, WireGuard, or an
    SSH tunnel from wherever the worker runs. Same speed as LAN, works from any
@@ -102,6 +103,7 @@ environment — the API and frontend never see the node.
    | `atlas-sync` | `BITCOIN_RPC_PASSWORD`  | from Start9 Properties |
    | `atlas-sync` | `TOR_SOCKS_PROXY`       | only for pattern 2 above |
    | `atlas-sync` | `CRYPTOCOMPARE_API_KEY` | optional, free key raises limits |
+   | `atlas-api`  | `BITCOIN_RPC_URL`/`_USER`/`_PASSWORD` | optional — same values as the worker; enables full tx detail in the explorer (see "Block explorer") |
    | `atlas-web`  | `VITE_API_URL`          | the `atlas-api` URL once live |
 
    (If you run the worker at home, suspend `atlas-sync` on Render and set the
@@ -151,7 +153,8 @@ compliance footer, unsubscribe link. The **Newsletter** tab lets any named
 admin draft in markdown-lite (headings, bold, links, bullets — HTML-escaped,
 injection-proof), attach up to 8 charts (embedded as the branded OG cards,
 linking back to the site), send themselves a test, and schedule delivery to
-the double-opt-in subscriber list (footer signup on the site). Sent
+the double-opt-in subscriber list (footer signup on the site, shown once
+`NEWSLETTER_SIGNUP_ENABLED=true`). Sent
 newsletters are immutable; per-recipient sends are individually audited;
 partial provider failures are counted and recorded.
 
@@ -188,9 +191,13 @@ every output. Block summaries come from the local index. Full transaction
 detail and block tx listings are RPC-enriched when the API service can reach
 your node; notably, **transaction lookup works without `txindex`** — the app
 learns the containing block from its own UTXO table and fetches by blockhash.
-Give the API service the same `BITCOIN_RPC_URL/USER/PASSWORD` (and
-`TOR_SOCKS_PROXY` if applicable) as the worker to enable this; without RPC the
-explorer degrades gracefully to DB-backed responses flagged `"rpc": false`.
+To enable this, give the API service the same `BITCOIN_RPC_URL/USER/PASSWORD`
+as the worker — on Render this works even for a Tor-only node, because
+`atlas-api` runs the same Docker image as the worker (`server/
+Dockerfile.worker`, Node + bundled Tor daemon) with `TOR_SOCKS_PROXY` preset
+to the in-container proxy; just fill in the `.onion` URL and credentials.
+Without RPC the explorer degrades gracefully to DB-backed responses flagged
+`"rpc": false`.
 
 ### Private API (`/v1`) — for your applications
 
@@ -232,10 +239,13 @@ admin.
 
 ### Key administration
 
-**Admin panel (recommended):** open `#/admin` on the site (linked in the
-footer), unlock with your `ADMIN_TOKEN`, and you get two tabs — **API Keys**
+**Admin panel (recommended):** navigate to `#/admin` on the site (type it into
+the URL — it is deliberately not linked anywhere in the UI), unlock with your
+`ADMIN_TOKEN` (or a `tn_admin_…` token), and you get five tabs — **API Keys**
 (create, list with usage stats and creator attribution, revoke), **Admins**
-(root only: mint and revoke per-person admin tokens), and **API Reference** (authentication,
+(root only: mint and revoke per-person admin tokens), **Newsletter** (compose,
+test-send, schedule), **Email Log** (the complete audit trail of every email
+the platform has attempted to send), and **API Reference** (authentication,
 every endpoint, and a live-verified example response for each, so integrators
 can see exactly what they'll get back). The token is held in browser memory
 only, never stored.
@@ -292,29 +302,55 @@ cd web && npm ci && npm run dev     # http://localhost:5173
 
 ## Testing
 
-97 tests: unit suites for the subsidy schedule, catalog↔schema integrity, RPC
-transport, and UI formatters, plus three Postgres-backed integration suites
-that replay a synthetic chain and verify the economics by hand (SOPR, realized
-P&L, CDD, realized-cap rotation, HODL waves, reorg rollback, pruning, the full
-API surface, price sync, reorg detection against a mock node) and the explorer
-(address balances, block/tx lookup with and without txindex, search dispatch,
-the complete API-key lifecycle, admin auth, and public rate limiting). A
-documentation contract test compares the admin panel's example responses
-against live API output key-for-key, so the docs cannot drift from the code.
+98 tests (80 server, 18 web). The server has unit suites (subsidy schedule,
+catalog↔schema integrity, RPC transport) that run without a database, plus
+Postgres-backed integration
+suites that replay a synthetic chain against mock providers and verify the
+economics by hand: the core pipeline (SOPR, realized P&L, CDD, realized-cap
+rotation, HODL waves, reorg rollback, pruning, the full API surface), the
+explorer (address balances, block/tx lookup with and without txindex, search
+dispatch, the complete API-key lifecycle, admin auth, public rate limiting),
+price sync and reorg detection against a mock node, the Massive live-price
+integration, the email platform (audit log, alerts, newsletters), and the
+signup kill switches. The web app has unit suites for the formatters
+(including coercion of the API's string-serialized numerics), the
+halving-epoch math, and the API reference. A documentation contract test
+compares the admin panel's example responses against live API output
+key-for-key, so the docs cannot drift from the code.
 
 ```bash
-# server (needs a scratch Postgres; any empty DB)
-cd server
-DATABASE_URL=postgres://localhost:5432/atlas_test PGSSLMODE=disable npm test
-npm run test:unit          # no database needed
-npm run test:coverage      # line/branch/function coverage report
+# scratch Postgres for the integration suites (NEVER point tests at real data —
+# they TRUNCATE their tables). Either:
+docker compose up -d db                # from the repo root; Postgres 16 on :5433
+# or, without Docker:
+scripts/scratch-db.sh start            # Homebrew postgresql@16 on :5433
 
-# web
+# server
+cd server
+npm run test:unit          # no database needed
+DATABASE_URL=postgres://atlas:atlas@localhost:5433/atlas_test PGSSLMODE=disable npm test
+npm run test:coverage      # same env; line/branch/function coverage report
+
+# web (no database, no DOM needed)
 cd web && npm test
 ```
 
 Current coverage: ~94% lines across the server (uncovered: the worker's
 infinite poll loop and the live-Tor code path).
+
+## Repository guide
+
+| Path | What it is |
+|------|------------|
+| `server/` | Express read API + chain-sync worker (Node 20+, Postgres) |
+| `server/Dockerfile.worker` | Docker image shared by the worker and the API on Render, with a bundled Tor daemon for `.onion` RPC |
+| `web/` | Vite 8 + React 18 frontend (hash-routed, iframe-embeddable) |
+| `render.yaml` | Render Blueprint: database, API, worker, static site |
+| `docker-compose.yml` | scratch Postgres for local integration tests |
+| `scripts/scratch-db.sh` | the same scratch Postgres via Homebrew, no Docker |
+| `DEPLOYMENT.md` | step-by-step deployment manual (Start9 → Render, ~45 min) |
+| `SECURITY.md` | security policy and vulnerability reporting |
+| `AGENTS.md` / `CLAUDE.md` | architecture map, invariants, and conventions for AI coding agents |
 
 ## Metric methodology, in one paragraph
 

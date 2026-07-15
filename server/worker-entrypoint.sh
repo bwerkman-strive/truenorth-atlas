@@ -1,8 +1,12 @@
 #!/bin/sh
-# Entrypoint for Dockerfile.worker: if TOR_SOCKS_PROXY is set, start a local
-# Tor daemon and wait for it to fully bootstrap before launching the sync
-# worker (Tor accepts SOCKS connections before it can actually build
-# circuits, so a plain port check isn't enough).
+# Entrypoint for Dockerfile.worker, shared by both Render Docker services:
+# if TOR_SOCKS_PROXY is set, start a local Tor daemon and wait for it to
+# fully bootstrap before launching the app (Tor accepts SOCKS connections
+# before it can actually build circuits, so a plain port check isn't enough).
+#
+# Runs the command passed as arguments, defaulting to the sync worker:
+#   ./worker-entrypoint.sh                    -> node src/sync.js  (atlas-sync)
+#   ./worker-entrypoint.sh node src/api.js    -> the read API      (atlas-api)
 set -eu
 
 if [ -n "${TOR_SOCKS_PROXY:-}" ]; then
@@ -22,4 +26,5 @@ if [ -n "${TOR_SOCKS_PROXY:-}" ]; then
   echo 'worker-entrypoint: Tor ready'
 fi
 
-exec node src/sync.js
+[ "$#" -gt 0 ] || set -- node src/sync.js
+exec "$@"

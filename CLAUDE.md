@@ -20,6 +20,10 @@
   `test/integration.*.test.js` for the pattern.
 - Prefer editing `theme.css` variables/classes over inline styles; the
   responsive layer at the bottom of that file owns breakpoint behavior.
+- When writing or editing user-facing copy (web prose, `catalog.js`
+  descriptions, `apiReference.js`), never use em-dashes — rephrase with
+  commas, colons, semicolons, or parentheses (the "—" missing-value
+  placeholder glyph is the one exception).
 - Never introduce localStorage/sessionStorage in `web/` (embedded/iframe use).
 - Secrets (`ADMIN_TOKEN`, `tn_admin_…`, `tn_live_…`, API keys for Resend/
   Massive) must never be logged, committed, or echoed into test fixtures

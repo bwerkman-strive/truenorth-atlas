@@ -1,5 +1,8 @@
-// Admin panel (#/admin). Two tabs:
-//   Keys          — create / list / revoke private-API keys
+// Admin panel (#/admin). Five tabs:
+//   API Keys      — create / list / revoke private-API keys
+//   Admins        — root only: mint / revoke per-person admin tokens
+//   Newsletter    — compose, test-send, schedule
+//   Email Log     — immutable audit trail of every send attempt
 //   API Reference — how to authenticate, every endpoint, example output
 //
 // The admin token is held in component state only — never persisted to

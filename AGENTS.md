@@ -2,9 +2,11 @@
 
 Bitcoin on-chain analytics platform + block explorer + private API + email
 platform. Node.js monorepo: `server/` (Express API + chain-sync worker,
-Postgres) and `web/` (Vite + React 18 + recharts SPA). Deployed on Render via
-`render.yaml`; the sync worker typically runs on a LAN host near the Bitcoin
-Core node (Start9, Core 25+, no txindex needed).
+Postgres) and `web/` (Vite 8 + React 18 + recharts SPA). Deployed on Render via
+`render.yaml`: the API and the sync worker both run on Render's Docker runtime
+sharing `server/Dockerfile.worker` (bundled Tor daemon, so either can reach
+the node's .onion RPC); the worker can instead run on a LAN host near the
+Bitcoin Core node (Start9, Core 25+, no txindex needed).
 
 ## Commands
 
@@ -55,6 +57,9 @@ server/src/
   alerts.js        metric alerts: double opt-in, crossing detection, checker
   newsletters.js   subscriber list, composer/scheduler endpoints, processNewsletters, email-log
 server/test/       unit.*.test.js (no DB) and integration.*.test.js (real Postgres + mock HTTP providers)
+server/Dockerfile.worker     Render Docker image shared by atlas-sync AND atlas-api: node:22-slim + Tor daemon
+server/worker-entrypoint.sh  waits for Tor bootstrap (skipped if TOR_SOCKS_PROXY unset), then execs its
+                             args — default node src/sync.js; atlas-api passes node src/api.js
 web/src/
   api.js           API client; format.js pure formatters; epoch.js pure halving math
   App.jsx          hash router (#/, #/m/:slug, #/explorer, #/b|tx|a/:x, #/admin), header, footer
@@ -111,6 +116,13 @@ web/src/
   chart keeps the `.chart-watermark`. Colors/typography come from CSS variables
   in `theme.css`; brand: navy `--ink-deep`, aurora `--aurora`, BTC orange
   reserved for price/coin.
+- **No em-dashes in user-facing copy** (web page/component prose, catalog
+  descriptions and zone copy, `apiReference.js` text): use commas, colons,
+  semicolons, or parentheses instead. The lone "—" glyph as a missing-value
+  placeholder and em-dashes in code comments are fine.
+- **The footer** shows only the disclaimer, the newsletter signup (when the
+  feature is enabled), and "Powered by Strive". There is deliberately no Admin
+  link anywhere in the UI; the panel is reached by typing `#/admin`.
 - **The Epoch Rings mark is data-driven** — coin position = chain progress
   through the halving epoch (`web/src/epoch.js`, fully unit-tested including
   orbit-radius exactness). Don't replace it with a static image.
@@ -136,3 +148,7 @@ web/src/
   set — that exactness is the product; don't "optimize" it away.
 - `metrics_daily` today's row doesn't exist until the day finalizes — at the
   live tip, "latest" means yesterday UTC. This is by design.
+- The API serializes Postgres `numeric` columns as **strings**. Frontend
+  formatters (`web/src/format.js` `fmt()`/`compact()`) coerce to Number and
+  render "—" for non-numeric input — a raw string reaching `.toFixed()` once
+  crashed (blank-paged) the whole app. Keep coercion when touching formatters.

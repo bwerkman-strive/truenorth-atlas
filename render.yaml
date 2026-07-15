@@ -13,13 +13,18 @@ databases:
 
 services:
   # ---- Read API ------------------------------------------------------------
+  # Docker runtime, same image as the worker (server/Dockerfile.worker, Node +
+  # bundled Tor): lets the API reach a .onion node for explorer RPC enrichment
+  # (full block tx listings, transaction detail). Tor only starts when
+  # TOR_SOCKS_PROXY is set; with the RPC vars unset the explorer serves
+  # DB-backed data flagged "rpc": false.
   - type: web
     name: atlas-api
-    runtime: node
+    runtime: docker
     plan: starter
-    rootDir: server
-    buildCommand: npm ci
-    startCommand: npm start
+    dockerfilePath: ./server/Dockerfile.worker
+    dockerContext: ./server
+    dockerCommand: ./worker-entrypoint.sh node src/api.js
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
@@ -55,16 +60,16 @@ services:
       - key: MASSIVE_API_KEY
         sync: false
       # Optional: give the API RPC access to enable full block tx lists and
-      # transaction detail in the explorer (same options as the worker —
-      # LAN/VPN/Tor). Without it, the explorer serves DB-backed data.
+      # transaction detail in the explorer (same values as the worker).
+      # Without it, the explorer serves DB-backed data.
       - key: BITCOIN_RPC_URL
-        sync: false
+        sync: false           # e.g. http://<your-onion>.onion:8332
       - key: BITCOIN_RPC_USER
         sync: false
       - key: BITCOIN_RPC_PASSWORD
         sync: false
       - key: TOR_SOCKS_PROXY
-        sync: false
+        value: socks5h://127.0.0.1:9050   # in-container Tor; clear if not using .onion
 
   # ---- Sync worker ----------------------------------------------------------
   # Docker runtime: the image (server/Dockerfile.worker) bundles a Tor daemon
