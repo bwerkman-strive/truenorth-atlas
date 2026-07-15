@@ -58,13 +58,14 @@ Pick one of three connectivity patterns for the sync worker:
    and the API + frontend still live on Render. This repo's worker is just a
    Node process — `node src/sync.js` — nothing Render-specific.
 
-2. **Tor from anywhere.** Set `BITCOIN_RPC_URL=http://<your-onion>.onion:8332`
-   and `TOR_SOCKS_PROXY=socks5h://<tor-daemon-host>:9050` (the `socks5h`
-   scheme is required — it resolves .onion names through Tor). The worker then
-   runs anywhere a Tor SOCKS proxy is reachable. Note Render's native runtimes
-   don't ship a Tor daemon; use this pattern where you control the host, or
-   run Tor as a sidecar in a Docker-based service. Expect the initial replay
-   to be several times slower over Tor.
+2. **Tor from anywhere — including Render.** Set
+   `BITCOIN_RPC_URL=http://<your-onion>.onion:8332` and
+   `TOR_SOCKS_PROXY=socks5h://<tor-daemon-host>:9050` (the `socks5h` scheme is
+   required — it resolves .onion names through Tor). The Blueprint's
+   `atlas-sync` worker builds from `server/Dockerfile.worker`, which bundles a
+   Tor daemon in the container and presets `TOR_SOCKS_PROXY` to it — on Render
+   you only fill in the `.onion` URL and RPC credentials. Expect the initial
+   replay to be several times slower over Tor.
 
 3. **VPN / tunnel.** Put the node's LAN RPC behind Tailscale, WireGuard, or an
    SSH tunnel from wherever the worker runs. Same speed as LAN, works from any

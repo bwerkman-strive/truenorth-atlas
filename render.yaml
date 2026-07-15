@@ -67,30 +67,31 @@ services:
         sync: false
 
   # ---- Sync worker ----------------------------------------------------------
-  # NOTE: if your node is only reachable on your LAN or over Tor (Start9,
-  # Umbrel), you may prefer to run this worker at home instead — see README
-  # "Connecting a Start9 node". It works anywhere; it only needs DATABASE_URL
-  # and RPC access.
+  # Docker runtime: the image (server/Dockerfile.worker) bundles a Tor daemon
+  # so the worker can reach a node exposed as a Tor hidden service (Start9,
+  # Umbrel) directly from Render. If your node is reachable another way (VPN,
+  # public RPC), just leave TOR_SOCKS_PROXY empty — Tor won't start.
+  # Running the worker at home near the node is still supported and faster
+  # for the initial replay — see README "Connecting a Start9 node".
   - type: worker
     name: atlas-sync
-    runtime: node
+    runtime: docker
     plan: standard            # sync is CPU/RAM hungry during initial replay
-    rootDir: server
-    buildCommand: npm ci
-    startCommand: npm run worker
+    dockerfilePath: ./server/Dockerfile.worker
+    dockerContext: ./server
     envVars:
       - key: DATABASE_URL
         fromDatabase:
           name: atlas-db
           property: connectionString
       - key: BITCOIN_RPC_URL
-        sync: false           # e.g. http://<your-node>:8332
+        sync: false           # e.g. http://<your-onion>.onion:8332
       - key: BITCOIN_RPC_USER
         sync: false
       - key: BITCOIN_RPC_PASSWORD
         sync: false
       - key: TOR_SOCKS_PROXY
-        sync: false           # only if the node is a .onion (see README)
+        value: socks5h://127.0.0.1:9050   # in-container Tor; clear if not using .onion
       - key: CRYPTOCOMPARE_API_KEY
         sync: false           # deep-history backfill (2010–2015); optional key raises limits
       - key: MASSIVE_API_KEY

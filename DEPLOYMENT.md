@@ -129,7 +129,7 @@ After setting it, click **Manual Deploy → Deploy latest commit** on
 | `BITCOIN_RPC_URL` | Depends on connectivity choice — see Part 4 |
 | `BITCOIN_RPC_USER` | From Start9 Properties (step 0.1) |
 | `BITCOIN_RPC_PASSWORD` | From Start9 Properties (step 0.1) |
-| `TOR_SOCKS_PROXY` | Only for Option B |
+| `TOR_SOCKS_PROXY` | Preset by the Blueprint to the in-container Tor (`socks5h://127.0.0.1:9050`) for Option B. Clear it for Option C |
 | `CRYPTOCOMPARE_API_KEY` | Your free key (optional) |
 
 ---
@@ -203,21 +203,26 @@ laptop, a $150 mini-PC, a NAS that runs Node 20+).
    journalctl -u atlas-sync -f     # watch progress
    ```
 
-### Option B — Tor, from anywhere
+### Option B — Tor, fully on Render (no home hardware)
 
-Works from any machine with a Tor daemon (including the Render worker if you
-containerize Tor alongside it; on a home/VPS box it's simpler):
+The Blueprint's `atlas-sync` worker builds from `server/Dockerfile.worker`,
+which bundles a Tor daemon inside the container — nothing to install. On
+`atlas-sync`, set:
 
-1. Install Tor (`sudo apt install tor` — it listens on `127.0.0.1:9050`).
-2. Set on the worker:
+```bash
+BITCOIN_RPC_URL='http://<your-node-onion-address>.onion:8332'
+```
 
-   ```bash
-   BITCOIN_RPC_URL='http://<your-node-onion-address>.onion:8332'
-   TOR_SOCKS_PROXY='socks5h://127.0.0.1:9050'
-   ```
+(the Tor Quick Connect address from step 0.1). `TOR_SOCKS_PROXY` is already
+preset to `socks5h://127.0.0.1:9050` — the in-container Tor. The entrypoint
+waits for Tor to bootstrap before starting the sync, so the first log lines
+are Tor's, then `schema ready` etc.
 
-   The `socks5h` scheme matters — it resolves `.onion` names through Tor.
-3. Expect the initial replay to run **several times slower** than LAN.
+The same pattern works on any home/VPS box: install Tor
+(`sudo apt install tor`), set the two variables above. The `socks5h` scheme
+matters — it resolves `.onion` names through Tor.
+
+Expect the initial replay to run **several times slower** than LAN.
 
 ### Option C — VPN / tunnel
 
