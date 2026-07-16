@@ -226,6 +226,16 @@ test('tier-1 metrics: cointime, cohort NUPL, sell-side risk, dormancy, price mod
   const expectHr = (Number(r1.hashrate_ehs) + Number(r2.hashrate_ehs)) / 2;
   assert.ok(Math.abs(Number(r2.hashrate_30d) - expectHr) < 1e-24);
   assert.ok(Math.abs(Number(r2.hashrate_60d) - expectHr) < 1e-24);
+
+  // Hashprice: day-2 revenue (50.001 BTC × $200) per PH/s of the
+  // difficulty-implied hashrate (difficulty 2 -> 2×2³²/600 H/s).
+  const hrPh2 = 2 * 2 ** 32 / 600 / 1e15; // PH/s
+  assert.ok(Math.abs(Number(r2.hashprice_usd_ph) / (50.001 * 200 / hrPh2) - 1) < 1e-12,
+    `hashprice=${r2.hashprice_usd_ph}`);
+  // Day 1: 100 BTC minted at $100 over a difficulty-1 day.
+  const hrPh1 = 2 ** 32 / 600 / 1e15;
+  assert.ok(Math.abs(Number(r1.hashprice_usd_ph) / (100 * 100 / hrPh1) - 1) < 1e-12,
+    `hashprice=${r1.hashprice_usd_ph}`);
 });
 
 test('cohort supply in profit: STH breadth from the snapshot, LTH undefined pre-cohort', async () => {
@@ -404,6 +414,25 @@ test('API serves catalog, latest, and series from the synced data', async () => 
     assert.equal(series.rows.length, 2);
     assert.deepEqual(series.rows.map(r => r.day), [D1, D2]);
     assert.equal(Number(series.rows[1].price), 200);
+
+    // Supply with projection: history from metrics_daily, the future from the
+    // consensus schedule anchored at the synthetic tip (h4 @ D3 03:00, 200 BTC
+    // minted), and halving markers estimated at 600 s/block from that tip.
+    const sup = await j('/api/series/circulating-supply?project=1');
+    assert.deepEqual(sup.rows.map(r => [r.day, Number(r.circulating_supply)]),
+      [[D1, 100], [D2, 150]]);
+    assert.equal(sup.projection[0].day, D3);
+    assert.equal(Number(sup.projection[0].circulating_supply), 200);
+    const projLast = sup.projection[sup.projection.length - 1];
+    assert.ok(Number(projLast.circulating_supply) < 21_000_000);
+    assert.equal(sup.halvings[0].height, 210_000);
+    assert.equal(sup.halvings[0].estimated, true, 'synthetic tip is pre-halving: all markers estimated');
+    assert.equal(sup.halvings[0].day,
+      new Date((t(D3, 3) + (210_000 - 4) * 600) * 1000).toISOString().slice(0, 10));
+    // Without ?project=1 the payload stays lean.
+    const plain = await j('/api/series/circulating-supply');
+    assert.equal(plain.projection, undefined);
+    assert.equal(plain.halvings, undefined);
 
     // Unknown slug is a clean 404, not a 500.
     const notFound = await fetch(`http://127.0.0.1:${port}/api/series/not-a-metric`);

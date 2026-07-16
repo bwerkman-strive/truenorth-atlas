@@ -9,7 +9,8 @@ import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import pino from 'pino';
-import { pool, migrate } from './db.js';
+import { pool, migrate, getState } from './db.js';
+import { projectSupply } from './supply.js';
 import { CATEGORIES, METRICS, bySlug } from './catalog.js';
 import { config } from './config.js';
 import { explorerRouter, publicRateLimit } from './explorer.js';
@@ -150,10 +151,11 @@ app.get('/api/catalog', (_req, res) => {
   cache(res);
   res.json({
     categories: CATEGORIES,
-    metrics: METRICS.map(({ slug, name, category, format, unit, short, explain, method, zones, kind, logDefault, overlayPrice }) => ({
+    metrics: METRICS.map(({ slug, name, category, format, unit, short, explain, method, zones, kind, logDefault, overlayPrice, unitToggle, projection }) => ({
       slug, name, category, format, unit, short, explain, method,
       zones: zones ?? [], kind: kind ?? 'line',
       logDefault: !!logDefault, overlayPrice: !!overlayPrice,
+      unitToggle: unitToggle ?? null, projection: !!projection,
     })),
   });
 });
@@ -216,8 +218,28 @@ app.get('/api/series/:slug', async (req, res) => {
       if (keep[keep.length - 1] !== rows[rows.length - 1]) keep.push(rows[rows.length - 1]);
       rows = keep;
     }
+    const payload = { slug: m.slug, columns: cols, rows };
+
+    // Projection (?project=1, catalog metrics with `projection` only): extend
+    // the series past the tip on the consensus issuance schedule, plus every
+    // halving marker — dated ones from HALVINGS, future ones at 600 s/block.
+    if (m.projection && req.query.project === '1') {
+      const tip = (await pool.query(
+        'SELECT MAX(height)::int h, EXTRACT(EPOCH FROM MAX(time))::float8 t FROM blocks')).rows[0];
+      if (tip.h !== null) {
+        const tipSupplySat = await getState(pool, 'circulating_supply_sat');
+        const { points, halvings } = projectSupply({
+          tipHeight: tip.h, tipTimeSec: tip.t, tipSupplySat,
+        });
+        const past = HALVINGS.slice(1) // epoch 1 starts at genesis, not a halving
+          .map((x, i) => ({ height: (i + 1) * 210_000, epoch: x.epoch, day: x.start, estimated: false }))
+          .filter(x => x.height <= tip.h);
+        payload.projection = points.map(p => ({ day: p.day, [cols[0]]: p.supply }));
+        payload.halvings = [...past, ...halvings];
+      }
+    }
     cache(res);
-    res.json({ slug: m.slug, columns: cols, rows });
+    res.json(payload);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

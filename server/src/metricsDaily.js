@@ -125,6 +125,9 @@ export async function snapshotAndRollupDay(day, log) {
     const transferredPrice = cumCoindays > 0 ? cumVdd / cumCoindays : null;
     const volUsd = Number(f.vol) * price;
     const diff = blk.diff !== null ? Number(blk.diff) : null;
+    const hashrateEhs = diff !== null ? diff * 2 ** 32 / 600 / 1e18 : null;
+    // Hashprice: what one PH/s earned today. Pre-market days give 0 (rev = 0).
+    const hashprice = hashrateEhs > 0 ? minerRev / (hashrateEhs * 1e3) : null;
 
     // Cointime economics: investor cap strips the miner-earned share out of
     // realized cap; active cap discounts market cap by liveliness (the share
@@ -156,10 +159,11 @@ export async function snapshotAndRollupDay(day, log) {
         miner_rev_usd, fees_pct_rev, hashrate_ehs, difficulty, thermocap, thermocap_multiple,
         balanced_price, transferred_price, nvt, tx_count, transfer_vol_btc, transfer_vol_usd,
         aviv, true_market_mean, sth_nupl, lth_nupl, sell_side_risk, rhodl, dormancy,
-        terminal_price, supply_1y_plus_pct, sth_profit_pct, lth_profit_pct, urpd)
+        terminal_price, supply_1y_plus_pct, sth_profit_pct, lth_profit_pct, urpd,
+        hashprice_usd_ph)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
         $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,
-        $40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51)
+        $40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52)
       ON CONFLICT (day) DO UPDATE SET price=EXCLUDED.price, market_cap=EXCLUDED.market_cap`,
       [day, price, supplyBtc, marketCap, realizedCap,
        realizedPrice, div(marketCap, realizedCap), marketCap > 0 ? (marketCap - realizedCap) / marketCap : null,
@@ -170,12 +174,13 @@ export async function snapshotAndRollupDay(day, log) {
        Number(f.cdd), liveliness, reserveRisk, JSON.stringify(waves), JSON.stringify(rcWaves),
        sthV, lthV, sthCost, lthCost, div(price, sthCost), div(price, lthCost),
        minerRev, Number(blk.minted) > 0 ? Number(blk.fees) / Number(blk.minted) : null,
-       diff !== null ? diff * 2 ** 32 / 600 / 1e18 : null, diff, thermocap, div(marketCap, thermocap),
+       hashrateEhs, diff, thermocap, div(marketCap, thermocap),
        realizedPrice !== null && transferredPrice !== null ? realizedPrice - transferredPrice : null,
        transferredPrice, div(marketCap, volUsd), Number(blk.txs), Number(f.vol), volUsd,
        aviv, trueMarketMean, sthNupl, lthNupl, sellSideRisk, rhodl, dormancy,
        terminalPrice, supply1yPlus, div(sthProfit, sthV), div(lthProfit, lthV),
-       urpd ? JSON.stringify(urpd) : null]);
+       urpd ? JSON.stringify(urpd) : null,
+       hashprice]);
 
     // Window-derived metrics need history: compute in one follow-up UPDATE.
     await client.query(`

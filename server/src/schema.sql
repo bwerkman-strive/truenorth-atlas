@@ -152,6 +152,7 @@ CREATE TABLE IF NOT EXISTS metrics_daily (
   delta_price        NUMERIC,      -- USD; (realized cap - average cap) / supply
   hashrate_30d       NUMERIC,      -- EH/s, 30d SMA (hash ribbons)
   hashrate_60d       NUMERIC,      -- EH/s, 60d SMA (hash ribbons)
+  hashprice_usd_ph   NUMERIC,      -- USD earned per PH/s per day (miner revenue / hashrate)
   supply_1y_plus_pct NUMERIC,      -- 0..1, share of supply dormant >= 1y
   sth_profit_pct     NUMERIC,      -- 0..1, share of STH supply in profit
   lth_profit_pct     NUMERIC,      -- 0..1, share of LTH supply in profit
@@ -173,6 +174,14 @@ ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS supply_1y_plus_pct NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS sth_profit_pct NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS lth_profit_pct NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS urpd JSONB;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS hashprice_usd_ph NUMERIC;
+
+-- Backfill hashprice for days finalized before the column existed. Pure
+-- derivation of two already-populated columns, so this is a no-op once filled
+-- (pre-market days come out 0, which is the intended economics).
+UPDATE metrics_daily
+SET hashprice_usd_ph = miner_rev_usd / (hashrate_ehs * 1e3)
+WHERE hashprice_usd_ph IS NULL AND miner_rev_usd IS NOT NULL AND hashrate_ehs > 0;
 
 -- Seed persistent counters
 INSERT INTO chain_state(key, value) VALUES

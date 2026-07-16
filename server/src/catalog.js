@@ -336,6 +336,16 @@ export const METRICS = [
 
   // ------------------------------------------------------------ mining
   {
+    slug: 'circulating-supply', column: 'circulating_supply', name: 'Circulating Supply', category: 'mining',
+    format: 'number', unit: 'BTC',
+    // The detail chart can extend this series past the tip on the consensus
+    // issuance schedule (?project=1) and mark every halving; see /api/series.
+    projection: true,
+    short: 'All bitcoin issued to date, with the remaining issuance schedule.',
+    explain: 'The supply curve is Bitcoin\'s monetary policy made visible: issuance halves every 210,000 blocks until the last satoshi around 2140, and no discretionary authority can change the path. With the projection on, the chart shows how little supply remains to be mined (well over 90% already circulates) and why each halving structurally tightens the flow of new coins from miners.',
+    method: 'Cumulative block subsidies from the daily UTXO-set snapshot. The projection extends the consensus subsidy schedule from the current chain tip, estimating future dates at 600 seconds per block; halvings are marked at each 210,000-block boundary (dashed markers are estimates).',
+  },
+  {
     slug: 'puell-multiple', column: 'puell', name: 'Puell Multiple', category: 'mining', ...ratio,
     zones: [
       { from: 0, to: 0.5, label: 'Miner income stress', tone: 'cold' },
@@ -365,6 +375,20 @@ export const METRICS = [
     short: 'Total USD earned by miners per day (subsidy + fees).',
     explain: 'The daily security spend, and the gross revenue line of the mining industry. Its trend against price tells you whether security is being paid for by issuance dilution or by real fee demand.',
     method: 'Claimed block subsidy plus transaction fees, valued at the day\'s close.',
+  },
+  {
+    slug: 'hashprice', column: 'hashprice_usd_ph', name: 'Hashprice', category: 'mining',
+    format: 'number', unit: 'USD/PH/day',
+    // First option is the default view; the detail chart offers the rest as a
+    // display-only toggle (the column, API, and alerts stay in the first unit).
+    unitToggle: [
+      { label: 'PH', unit: 'USD/PH/day', factor: 1 },
+      { label: 'TH', unit: 'USD/TH/day', factor: 0.001 },
+    ],
+    logDefault: true,
+    short: 'What one petahash of hash power earned per day, in dollars.',
+    explain: 'Hashprice is the mining industry\'s revenue benchmark: the daily dollar yield on a unit of hash power. It ties the security budget to miner profitability; when hashprice falls toward the cost of the electricity behind it, inefficient miners shut off (the capitulations hash ribbons detect), and when it rises, new capital flows into securing the network. Halvings cut it structurally, so the long-run decline is expected; the signal is its level relative to miners\' operating costs.',
+    method: 'Daily miner revenue (subsidy + fees at the day\'s close) ÷ difficulty-implied hashrate, quoted per PH/s per day. The chart offers a per-TH/s view; stored values are per PH/s.',
   },
   {
     slug: 'fees-pct-revenue', column: 'fees_pct_rev', name: 'Fees % of Revenue', category: 'mining', ...pct,

@@ -16,6 +16,7 @@ const RANGES = [
 const SERIES_LABELS = {
   price: 'BTC Price', realized_price: 'Realized Price', balanced_price: 'Balanced Price',
   sth_cost_basis: 'STH Cost Basis', lth_cost_basis: 'LTH Cost Basis',
+  circulating_supply: 'Circulating Supply',
 };
 const MULTI_COLORS = ['var(--btc)', 'var(--aurora)', 'var(--cold)', '#c084fc'];
 function seriesColor(c, i) {
@@ -24,7 +25,9 @@ function seriesColor(c, i) {
   if (c.includes('profit')) return 'var(--aurora)';
   return MULTI_COLORS[(i + 1) % MULTI_COLORS.length];
 }
-const seriesLabel = (c) => SERIES_LABELS[c] ?? c;
+const seriesLabel = (c) => (c.endsWith('_proj')
+  ? `${SERIES_LABELS[c.slice(0, -5)] ?? c.slice(0, -5)} (projected)`
+  : SERIES_LABELS[c] ?? c);
 
 const EPOCH_COLORS = { 1: '#6c809a', 2: '#7b6cf0', 3: '#58a8ff', 4: '#4fd7d0', 5: '#4fe3a9' };
 const EPOCH_WIDTH = { 5: 2.6 }; // current cycle drawn heavier
@@ -40,7 +43,8 @@ function toneColor(t) {
 }
 
 export default function MetricDetail({ metric, latestVal, onBack, categories, features }) {
-  const [range, setRange] = useState(metric.kind === 'stacked' ? 'all' : '4y');
+  // Projection metrics open on full history: the schedule is the point.
+  const [range, setRange] = useState(metric.kind === 'stacked' || metric.projection ? 'all' : '4y');
   const [logScale, setLogScale] = useState(!!metric.logDefault);
   const [showPrice, setShowPrice] = useState(!!metric.overlayPrice);
   const [view, setView] = useState('series'); // 'series' | 'cycles'
@@ -49,11 +53,21 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   const [urpd, setUrpd] = useState(null);
   const [err, setErr] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [unitIdx, setUnitIdx] = useState(0);
+  const [showProj, setShowProj] = useState(true);
   // Scalar metrics get the full toolbar; 'stacked' and 'urpd' kinds render
   // their own chart form with a reduced toolbar.
   const scalar = metric.kind !== 'stacked' && metric.kind !== 'urpd';
 
-  useEffect(() => { setView('series'); setCycles(null); }, [metric.slug]);
+  // Optional display-only unit toggle (catalog `unitToggle`): values are
+  // stored, served, and alerted in the first unit; the rest are rescalings.
+  const unitOpts = Array.isArray(metric.unitToggle) && metric.unitToggle.length > 1
+    ? metric.unitToggle : null;
+  const unitFactor = unitOpts?.[unitIdx]?.factor ?? 1;
+  const displayUnit = unitOpts?.[unitIdx]?.unit ?? metric.unit;
+  const scaleVal = (v) => (v === null || v === undefined || v === '' ? null : Number(v) * unitFactor);
+
+  useEffect(() => { setView('series'); setCycles(null); setUnitIdx(0); setShowProj(true); }, [metric.slug]);
 
   useEffect(() => {
     if (metric.kind === 'urpd') {
@@ -73,7 +87,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
       ? new Date(Date.now() - r.days * 86400e3).toISOString().slice(0, 10)
       : undefined);
     setData(null); setErr(null);
-    api.series(metric.slug, { from, price: showPrice, downsample: 1200 })
+    api.series(metric.slug, { from, price: showPrice, downsample: 1200, project: metric.projection })
       .then(setData).catch(e => setErr(e.message));
   }, [metric.slug, range, showPrice, view]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -83,14 +97,14 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
     for (const e of cycles.epochs) {
       for (const { d, v } of e.values) {
         if (!byDay.has(d)) byDay.set(d, { d });
-        byDay.get(d)['epoch' + e.epoch] = v;
+        byDay.get(d)['epoch' + e.epoch] = unitOpts ? scaleVal(v) : v;
       }
     }
     const rows = [...byDay.values()].sort((a, b) => a.d - b.d);
     if (logScale) for (const r of rows) for (const k of Object.keys(r))
       if (k !== 'd' && r[k] !== undefined && r[k] !== null && r[k] <= 0) r[k] = null;
     return rows;
-  }, [cycles, logScale]);
+  }, [cycles, logScale, unitFactor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const share = async () => {
     try {
@@ -110,15 +124,39 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
         return { day: r.day, ...(obj || {}) };
       }).filter(r => Object.keys(r).length > 1);
     }
-    return data.rows.map(r => {
-      const out = { day: r.day };
-      for (const c of data.columns) out[c] = r[c] === null ? null : Number(r[c]);
-      if (r.price !== undefined) out.price = Number(r.price);
+    const out = data.rows.map(r => {
+      const row = { day: r.day };
+      for (const c of data.columns) row[c] = r[c] === null ? null : Number(r[c]) * unitFactor;
+      if (r.price !== undefined) row.price = Number(r.price);
       // Log scale can't render non-positive values.
-      if (logScale) for (const k of Object.keys(out)) if (k !== 'day' && out[k] !== null && out[k] <= 0) out[k] = null;
-      return out;
+      if (logScale) for (const k of Object.keys(row)) if (k !== 'day' && row[k] !== null && row[k] <= 0) row[k] = null;
+      return row;
     });
-  }, [data, metric, logScale]);
+    // Projected continuation (issuance schedule): its own dashed series,
+    // seamed onto the last historical point so the two lines connect.
+    if (showProj && data.projection?.length && out.length) {
+      const c = data.columns[0];
+      out[out.length - 1][c + '_proj'] = out[out.length - 1][c];
+      for (const p of data.projection) out.push({ day: p.day, [c + '_proj']: Number(p[c]) * unitFactor });
+    }
+    return out;
+  }, [data, metric, logScale, unitFactor, showProj]);
+
+  // Halving markers, snapped to the nearest plotted day (the category x-axis
+  // only renders reference lines whose x matches an actual data point).
+  const halvingMarks = useMemo(() => {
+    if (!data?.halvings || rows.length === 0) return [];
+    const days = rows.map(r => r.day);
+    const first = days[0], last = days[days.length - 1];
+    return data.halvings
+      .filter(h => (h.estimated ? showProj : true) && h.day >= first && h.day <= last)
+      .map(h => ({
+        ...h,
+        x: days.reduce((best, d) =>
+          (Math.abs(Date.parse(d) - Date.parse(h.day)) < Math.abs(Date.parse(best) - Date.parse(h.day)) ? d : best)),
+        label: (h.estimated ? '~' : '') + h.day.slice(0, 4),
+      }));
+  }, [data, rows, showProj]);
 
   const catName = categories.find(c => c.id === metric.category)?.name ?? '';
   // Watermark only when a chart is actually on screen, never over loading/empty states.
@@ -151,7 +189,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
         <h1>{metric.name}</h1>
         <p className="short">{metric.short}</p>
         {scalar && (
-          <div className="bigval">{fmt(latestVal, metric.format, metric.unit)}</div>
+          <div className="bigval">{fmt(unitOpts ? scaleVal(latestVal) : latestVal, metric.format, displayUnit)}</div>
         )}
       </div>
 
@@ -171,6 +209,20 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
           <div className="grp">
             <button className={!logScale ? 'on' : ''} onClick={() => setLogScale(false)}>Linear</button>
             <button className={logScale ? 'on' : ''} onClick={() => setLogScale(true)}>Log</button>
+          </div>
+        )}
+        {scalar && unitOpts && (
+          <div className="grp" role="group" aria-label="Unit">
+            {unitOpts.map((u, i) => (
+              <button key={u.label} className={unitIdx === i ? 'on' : ''} onClick={() => setUnitIdx(i)}>{u.label}</button>
+            ))}
+          </div>
+        )}
+        {view === 'series' && scalar && metric.projection && (
+          <div className="grp">
+            <button className={showProj ? 'on' : ''} onClick={() => setShowProj(!showProj)}>
+              {showProj ? '✓ ' : ''}Projection
+            </button>
           </div>
         )}
         {view === 'series' && scalar && metric.slug !== 'price'
@@ -205,7 +257,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                   tick={{ fill: 'var(--text-faint)', fontSize: 11 }} tickFormatter={(v) => compact(v)} width={64} />
                 <Tooltip contentStyle={{ background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
                   labelFormatter={(d) => `Day ${d} of epoch`}
-                  formatter={(v, n) => [fmt(Number(v), metric.format, metric.unit), n.replace('epoch', 'Epoch ')]} />
+                  formatter={(v, n) => [fmt(Number(v), metric.format, displayUnit), n.replace('epoch', 'Epoch ')]} />
                 {cycles.epochs.map(e => (
                   <Line key={e.epoch} dataKey={'epoch' + e.epoch} dot={false} isAnimationActive={false}
                     stroke={EPOCH_COLORS[e.epoch] ?? 'var(--cold)'}
@@ -286,16 +338,25 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                   tickFormatter={(v) => '$' + compact(v)} width={64} />
               )}
               {!logScale && (metric.zones ?? []).map((z, i) => z.tone === 'line'
-                ? <ReferenceLine key={i} yAxisId="m" y={z.from} stroke="var(--text-faint)" strokeDasharray="4 4" />
-                : <ReferenceArea key={i} yAxisId="m" y1={z.from} y2={z.to} fill={toneColor(z.tone)} stroke="none" />)}
+                ? <ReferenceLine key={i} yAxisId="m" y={z.from * unitFactor} stroke="var(--text-faint)" strokeDasharray="4 4" />
+                : <ReferenceArea key={i} yAxisId="m" y1={z.from * unitFactor} y2={z.to * unitFactor} fill={toneColor(z.tone)} stroke="none" />)}
+              {halvingMarks.map(h => (
+                <ReferenceLine key={h.height} yAxisId="m" x={h.x} stroke="var(--text-faint)" strokeDasharray="3 5"
+                  label={{ value: h.label, position: 'insideTopLeft', fill: 'var(--text-faint)', fontSize: 10 }} />
+              ))}
               <Tooltip contentStyle={{ background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
                 labelFormatter={fmtDay}
-                formatter={(v, n) => [fmt(Number(v), n === 'price' ? 'usd' : metric.format, metric.unit), seriesLabel(n)]} />
+                formatter={(v, n) => [fmt(Number(v), n === 'price' ? 'usd' : metric.format, displayUnit), seriesLabel(n)]} />
               {(data.columns ?? []).map((c, i) => (
                 <Line key={c} yAxisId="m" dataKey={c} dot={false} isAnimationActive={false}
                   stroke={seriesColor(c, i)}
                   strokeWidth={c === 'price' && data.columns.length > 1 ? 2.2 : 1.7} connectNulls />
               ))}
+              {showProj && data.projection?.length > 0 && (
+                <Line yAxisId="m" dataKey={data.columns[0] + '_proj'} dot={false} isAnimationActive={false}
+                  stroke={seriesColor(data.columns[0], 0)} strokeWidth={1.7}
+                  strokeDasharray="6 4" strokeOpacity={0.75} connectNulls />
+              )}
               {showPrice && metric.slug !== 'price' && (
                 <Line yAxisId="p" dataKey="price" dot={false} isAnimationActive={false}
                   stroke="var(--btc)" strokeWidth={1.2} strokeOpacity={0.75} connectNulls />

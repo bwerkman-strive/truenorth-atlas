@@ -56,12 +56,13 @@ export const api = {
   },
   latest: () => get('/api/latest'),
   status: () => get('/api/status'),
-  series: (slug, { from, to, price, downsample } = {}) => {
+  series: (slug, { from, to, price, downsample, project } = {}) => {
     const q = new URLSearchParams();
     if (from) q.set('from', from);
     if (to) q.set('to', to);
     if (price) q.set('price', '1');
     if (downsample) q.set('downsample', String(downsample));
+    if (project) q.set('project', '1');
     return get(`/api/series/${slug}?${q}`);
   },
 };
