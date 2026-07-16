@@ -190,9 +190,12 @@ button { font-family: inherit; }
 .xh-hash { font-size: clamp(17px, 2.6vw, 24px) !important; }
 
 .xtable { border: 1px solid var(--ink-line); border-radius: var(--radius); overflow: hidden; margin: 10px 0 18px; }
-/* Latest-blocks feed columns: Height, Time, Interval, Txs, sat/vB, Full, Fees */
-.xthead { display: grid; grid-template-columns: 110px 1fr 80px 60px 70px 56px 150px; gap: 10px; padding: 10px 16px; background: var(--ink-raise); color: var(--text-faint); font-size: 12px; }
-.xtr { display: grid; grid-template-columns: 110px 1fr 80px 60px 70px 56px 150px; gap: 10px; padding: 12px 16px; background: var(--ink-panel); border: 0; border-top: 1px solid var(--ink-line); color: var(--text); text-align: left; font-size: 13px; cursor: pointer; width: 100%; }
+/* Latest-blocks feed columns: Height, Time, Interval, Txs, sat/vB, Full, Fees.
+   Time gets its natural width; the slack spreads across the numeric columns,
+   which right-align (number-column convention). */
+.xthead { display: grid; grid-template-columns: 110px 210px 1fr 1fr 1fr 1fr 150px; gap: 10px; padding: 10px 16px; background: var(--ink-raise); color: var(--text-faint); font-size: 12px; }
+.xtr { display: grid; grid-template-columns: 110px 210px 1fr 1fr 1fr 1fr 150px; gap: 10px; padding: 12px 16px; background: var(--ink-panel); border: 0; border-top: 1px solid var(--ink-line); color: var(--text); text-align: left; font-size: 13px; cursor: pointer; width: 100%; }
+.xthead span:nth-child(n+3), .xtr span:nth-child(n+3) { text-align: right; }
 .xtr:hover { background: var(--ink-raise); }
 .xsplit { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 
