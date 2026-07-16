@@ -429,6 +429,9 @@ test('API serves catalog, latest, and series from the synced data', async () => 
     assert.equal(sup.halvings[0].estimated, true, 'synthetic tip is pre-halving: all markers estimated');
     assert.equal(sup.halvings[0].day,
       new Date((t(D3, 3) + (210_000 - 4) * 600) * 1000).toISOString().slice(0, 10));
+    // The projection runs until issuance ends: the final marker is the
+    // boundary where the subsidy reaches zero.
+    assert.equal(sup.halvings[sup.halvings.length - 1].height, 6_930_000);
     // Without ?project=1 the payload stays lean.
     const plain = await j('/api/series/circulating-supply');
     assert.equal(plain.projection, undefined);

@@ -32,9 +32,17 @@ test('future halvings land on exact 210,000 boundaries, dated at 600 s/block', (
   const { halvings, points } = projectSupply({
     tipHeight: 903_000, tipTimeSec, tipSupplySat: 19_890_000e8,
   });
-  assert.deepEqual(halvings.map(h => h.height), [1_050_000, 1_260_000, 1_470_000]);
-  assert.deepEqual(halvings.map(h => h.epoch), [6, 7, 8]);
+  // Default horizon: every remaining halving through the end of issuance,
+  // i.e. epochs 6..34 (the subsidy hits zero at block 6,930,000, ~2141).
+  assert.equal(halvings.length, 29);
+  assert.deepEqual(halvings.slice(0, 3).map(h => h.height), [1_050_000, 1_260_000, 1_470_000]);
+  assert.deepEqual(halvings.slice(0, 3).map(h => h.epoch), [6, 7, 8]);
+  assert.equal(halvings[halvings.length - 1].height, 6_930_000);
+  assert.equal(halvings[halvings.length - 1].epoch, 34);
   assert.ok(halvings.every(h => h.estimated));
+  // Nothing left to issue past the horizon: the curve is flat after 6,930,000.
+  assert.equal(issuanceBetweenSat(6_930_000, 7_500_000), 0);
+  assert.equal(issuanceBetweenSat(6_929_998, 6_929_999), 1, 'the last block with a subsidy mints 1 sat');
   const expDay = new Date((tipTimeSec + (1_050_000 - 903_000) * 600) * 1000)
     .toISOString().slice(0, 10);
   assert.equal(halvings[0].day, expDay);

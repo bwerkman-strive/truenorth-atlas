@@ -343,7 +343,7 @@ export const METRICS = [
     projection: true,
     short: 'All bitcoin issued to date, with the remaining issuance schedule.',
     explain: 'The supply curve is Bitcoin\'s monetary policy made visible: issuance halves every 210,000 blocks until the last satoshi around 2140, and no discretionary authority can change the path. With the projection on, the chart shows how little supply remains to be mined (well over 90% already circulates) and why each halving structurally tightens the flow of new coins from miners.',
-    method: 'Cumulative block subsidies from the daily UTXO-set snapshot. The projection extends the consensus subsidy schedule from the current chain tip, estimating future dates at 600 seconds per block; halvings are marked at each 210,000-block boundary (dashed markers are estimates).',
+    method: 'Cumulative block subsidies from the daily UTXO-set snapshot. The projection extends the consensus subsidy schedule from the current chain tip until issuance ends (block 6,930,000, around 2141), estimating future dates at 600 seconds per block; halvings are marked at each 210,000-block boundary (dashed markers are estimates).',
   },
   {
     slug: 'puell-multiple', column: 'puell', name: 'Puell Multiple', category: 'mining', ...ratio,

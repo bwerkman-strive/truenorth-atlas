@@ -23,16 +23,24 @@ export function issuanceBetweenSat(fromHeight, toHeight) {
   return sum;
 }
 
-// Projected supply curve from the tip through `halvingsAhead` future halvings
-// plus a `tailDays` runway, sampled every `stepDays` with an exact sample at
-// each halving boundary (the curve kinks there). Returns BTC-denominated
-// points and the future halving markers.
+// Projected supply curve from the tip, sampled every `stepDays` with an exact
+// sample at each halving boundary (the curve kinks there), plus a `tailDays`
+// runway past the final boundary. By default the horizon runs through the
+// halving where the subsidy reaches zero, i.e. until the last new supply has
+// hit the market (block 6,930,000, around 2141); pass `halvingsAhead` for a
+// shorter fixed horizon. Returns BTC-denominated points and halving markers.
 export function projectSupply({
   tipHeight, tipTimeSec, tipSupplySat,
-  halvingsAhead = 3, tailDays = 365, stepDays = 30,
+  halvingsAhead = null, tailDays = 365, stepDays = 30,
 }) {
   const nextN = Math.floor(tipHeight / HALVING_INTERVAL) + 1;
-  const lastN = nextN + halvingsAhead - 1;
+  let lastN;
+  if (halvingsAhead) {
+    lastN = nextN + halvingsAhead - 1;
+  } else {
+    lastN = nextN;
+    while (blockSubsidySat(lastN * HALVING_INTERVAL) > 0) lastN++;
+  }
   const endHeight = lastN * HALVING_INTERVAL + Math.round(tailDays * 86400 / BLOCK_SECONDS);
   const stepBlocks = Math.round(stepDays * 86400 / BLOCK_SECONDS);
 

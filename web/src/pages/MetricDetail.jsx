@@ -143,18 +143,21 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   }, [data, metric, logScale, unitFactor, showProj]);
 
   // Halving markers, snapped to the nearest plotted day (the category x-axis
-  // only renders reference lines whose x matches an actual data point).
+  // only renders reference lines whose x matches an actual data point). The
+  // projection runs to the end of issuance (~29 future halvings), so only the
+  // first few estimated markers get labels; the rest stay unlabeled hairlines.
   const halvingMarks = useMemo(() => {
     if (!data?.halvings || rows.length === 0) return [];
     const days = rows.map(r => r.day);
     const first = days[0], last = days[days.length - 1];
+    let labeledEst = 0;
     return data.halvings
       .filter(h => (h.estimated ? showProj : true) && h.day >= first && h.day <= last)
       .map(h => ({
         ...h,
         x: days.reduce((best, d) =>
           (Math.abs(Date.parse(d) - Date.parse(h.day)) < Math.abs(Date.parse(best) - Date.parse(h.day)) ? d : best)),
-        label: (h.estimated ? '~' : '') + h.day.slice(0, 4),
+        label: !h.estimated || labeledEst++ < 3 ? (h.estimated ? '~' : '') + h.day.slice(0, 4) : null,
       }));
   }, [data, rows, showProj]);
 
@@ -342,7 +345,8 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                 : <ReferenceArea key={i} yAxisId="m" y1={z.from * unitFactor} y2={z.to * unitFactor} fill={toneColor(z.tone)} stroke="none" />)}
               {halvingMarks.map(h => (
                 <ReferenceLine key={h.height} yAxisId="m" x={h.x} stroke="var(--text-faint)" strokeDasharray="3 5"
-                  label={{ value: h.label, position: 'insideTopLeft', fill: 'var(--text-faint)', fontSize: 10 }} />
+                  strokeOpacity={h.label ? 1 : 0.45}
+                  label={h.label ? { value: h.label, position: 'insideTopLeft', fill: 'var(--text-faint)', fontSize: 10 } : undefined} />
               ))}
               <Tooltip contentStyle={{ background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
                 labelFormatter={fmtDay}
