@@ -389,10 +389,12 @@ export function explorerRouter() {
 
   r.get('/blocks/recent', async (_req, res) => {
     try {
+      // 13 rows: the UI shows 12 and uses the extra one to compute the
+      // interval (time since previous block) of its oldest visible row.
       const r2 = await pool.query(
         `SELECT height, hash, EXTRACT(EPOCH FROM time)::bigint AS time, tx_count,
                 fees_sat::bigint AS fees_sat, size_bytes, weight
-         FROM blocks ORDER BY height DESC LIMIT 12`);
+         FROM blocks ORDER BY height DESC LIMIT 13`);
       res.json({ blocks: r2.rows.map(b => ({ ...b, time: Number(b.time), fees_sat: Number(b.fees_sat) })) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });

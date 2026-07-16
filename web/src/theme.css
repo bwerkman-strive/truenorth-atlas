@@ -190,8 +190,9 @@ button { font-family: inherit; }
 .xh-hash { font-size: clamp(17px, 2.6vw, 24px) !important; }
 
 .xtable { border: 1px solid var(--ink-line); border-radius: var(--radius); overflow: hidden; margin: 10px 0 18px; }
-.xthead { display: grid; grid-template-columns: 110px 1fr 70px 90px 150px; gap: 10px; padding: 10px 16px; background: var(--ink-raise); color: var(--text-faint); font-size: 12px; }
-.xtr { display: grid; grid-template-columns: 110px 1fr 70px 90px 150px; gap: 10px; padding: 12px 16px; background: var(--ink-panel); border: 0; border-top: 1px solid var(--ink-line); color: var(--text); text-align: left; font-size: 13px; cursor: pointer; width: 100%; }
+/* Latest-blocks feed columns: Height, Time, Interval, Txs, sat/vB, Full, Fees */
+.xthead { display: grid; grid-template-columns: 110px 1fr 80px 60px 70px 56px 150px; gap: 10px; padding: 10px 16px; background: var(--ink-raise); color: var(--text-faint); font-size: 12px; }
+.xtr { display: grid; grid-template-columns: 110px 1fr 80px 60px 70px 56px 150px; gap: 10px; padding: 12px 16px; background: var(--ink-panel); border: 0; border-top: 1px solid var(--ink-line); color: var(--text); text-align: left; font-size: 13px; cursor: pointer; width: 100%; }
 .xtr:hover { background: var(--ink-raise); }
 .xsplit { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 
@@ -216,7 +217,10 @@ button { font-family: inherit; }
 .xtoggle:hover { border-color: rgba(242, 237, 227, 0.4); color: var(--text); }
 @media (max-width: 760px) {
   .xsplit { grid-template-columns: 1fr; }
-  .xthead, .xtr { grid-template-columns: 80px 1fr 50px; }
+  /* Latest blocks: keep Height, Time, Txs, sat/vB; drop Interval, Full, Fees */
+  .xthead, .xtr { grid-template-columns: 80px 1fr 50px 70px; }
+  .xthead span:nth-child(3), .xtr span:nth-child(3),
+  .xthead span:nth-child(6), .xtr span:nth-child(6),
   .xthead span:last-child, .xtr span:last-child { display: none; }
   .xlabel { flex-basis: 110px; }
 }
@@ -389,9 +393,9 @@ button { font-family: inherit; }
   .card { padding: 16px 16px 14px; }
   .xlabel { flex: 0 0 96px; font-size: 11.5px; }
   .xamt { white-space: normal; word-break: normal; } /* long UTXO detail lines wrap at spaces */
-  /* Latest-blocks table: drop the Size column on compact screens */
-  .xthead, .xtr { grid-template-columns: 90px 1fr 60px 130px; }
-  .xthead span:nth-child(4), .xtr span:nth-child(4) { display: none; }
+  /* Latest-blocks table: also drop sat/vB, leaving Height, Time, Txs */
+  .xthead, .xtr { grid-template-columns: 80px 1fr 56px; }
+  .xthead span:nth-child(5), .xtr span:nth-child(5) { display: none; }
   .toolbar { gap: 6px; }
   .toolbar .share-grp { margin-left: 0; }      /* let it wrap naturally */
   .detail-hd h1 { font-size: clamp(24px, 6.6vw, 30px); }
@@ -405,8 +409,9 @@ button { font-family: inherit; }
   .chartwrap { height: 280px; }
   .hdr-price { font-size: 12.5px; }
   .catnav button { padding: 6px 11px; font-size: 11px; }
+  /* Latest blocks: Height and Time only */
   .xthead, .xtr { grid-template-columns: 66px 1fr; }
-  .xthead span:nth-child(3), .xtr span:nth-child(3) { display: none; }
+  .xthead span:nth-child(4), .xtr span:nth-child(4) { display: none; }
 }
 
 /* --- Touch devices: comfortable targets regardless of width --- */

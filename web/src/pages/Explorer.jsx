@@ -15,9 +15,24 @@ const when = (t) => {
   return `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)} ${iso.slice(11, 19)} UTC`;
 };
 const mid = (s, n = 12) => (s && s.length > n * 2 + 3 ? s.slice(0, n) + '…' + s.slice(-n) : s);
-const blkSize = (bytes) => (bytes == null ? '—'
-  : bytes >= 1e6 ? (bytes / 1e6).toFixed(2) + ' MB'
-  : (bytes / 1e3).toFixed(1) + ' kB');
+// Average fee rate over the whole block, in sat/vB (vsize = weight / 4).
+const blkFeeRate = (feesSat, weight) => (weight ? (Number(feesSat) / (weight / 4)).toFixed(1) : '—');
+// Share of the 4M weight-unit consensus limit the block used.
+const blkFull = (weight) => {
+  if (weight == null) return '—';
+  const pct = (weight / 4e6) * 100;
+  return (pct >= 10 ? pct.toFixed(0) : pct.toFixed(1)) + '%';
+};
+// Interval since the previous block. Timestamps aren't monotonic in Bitcoin,
+// so a negative gap clamps to 0s rather than showing a nonsense duration.
+const blkInterval = (sec) => {
+  if (sec == null) return '—';
+  const s = Math.max(0, sec);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+};
 
 function go(hash) { window.location.hash = hash; window.scrollTo(0, 0); }
 
@@ -91,14 +106,17 @@ function ExplorerHome() {
         {recent && recent.length > 0 && (
           <div className="xtable" role="table">
             <div className="xthead" role="row">
-              <span>Height</span><span>Time</span><span>Txs</span><span>Size</span><span>Fees</span>
+              <span>Height</span><span>Time</span><span>Interval</span><span>Txs</span>
+              <span>sat/vB</span><span>Full</span><span>Fees</span>
             </div>
-            {recent.map(b => (
+            {recent.slice(0, 12).map((b, i) => (
               <button key={b.height} className="xtr" role="row" onClick={() => go(`#/b/${b.height}`)}>
                 <span className="mono">{b.height.toLocaleString()}</span>
                 <span>{when(b.time)}</span>
+                <span>{recent[i + 1] ? blkInterval(b.time - recent[i + 1].time) : '—'}</span>
                 <span>{b.tx_count?.toLocaleString?.() ?? b.tx_count}</span>
-                <span>{blkSize(b.size_bytes)}</span>
+                <span>{blkFeeRate(b.fees_sat, b.weight)}</span>
+                <span>{blkFull(b.weight)}</span>
                 <span>{sat2btc(b.fees_sat)}</span>
               </button>
             ))}

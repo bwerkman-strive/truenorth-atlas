@@ -188,7 +188,7 @@ export const API_ENDPOINTS = [
     method: 'GET',
     path: '/v1/blocks/recent',
     title: 'Recent blocks',
-    desc: 'The 12 most recently synced blocks, a lightweight feed for dashboards.',
+    desc: 'The 13 most recently synced blocks, a lightweight feed for dashboards (one extra row so consumers can derive the block interval for the 12 newest).',
     example: '/v1/blocks/recent',
     response: {
       blocks: [
