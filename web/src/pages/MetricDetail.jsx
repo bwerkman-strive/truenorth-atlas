@@ -126,10 +126,11 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
     }
     const out = data.rows.map(r => {
       const row = { day: r.day };
+      if (metric.projection) row.t = Date.parse(r.day);
       for (const c of data.columns) row[c] = r[c] === null ? null : Number(r[c]) * unitFactor;
       if (r.price !== undefined) row.price = Number(r.price);
       // Log scale can't render non-positive values.
-      if (logScale) for (const k of Object.keys(row)) if (k !== 'day' && row[k] !== null && row[k] <= 0) row[k] = null;
+      if (logScale) for (const k of Object.keys(row)) if (k !== 'day' && k !== 't' && row[k] !== null && row[k] <= 0) row[k] = null;
       return row;
     });
     // Projected continuation (issuance schedule): its own dashed series,
@@ -137,26 +138,34 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
     if (showProj && data.projection?.length && out.length) {
       const c = data.columns[0];
       out[out.length - 1][c + '_proj'] = out[out.length - 1][c];
-      for (const p of data.projection) out.push({ day: p.day, [c + '_proj']: Number(p[c]) * unitFactor });
+      for (const p of data.projection) {
+        out.push({ day: p.day, t: Date.parse(p.day), [c + '_proj']: Number(p[c]) * unitFactor });
+      }
     }
     return out;
   }, [data, metric, logScale, unitFactor, showProj]);
 
-  // Halving markers, snapped to the nearest plotted day (the category x-axis
-  // only renders reference lines whose x matches an actual data point). The
-  // projection runs to the end of issuance (~29 future halvings), so only the
-  // first few estimated markers get labels; the rest stay unlabeled hairlines.
+  // Projection metrics plot on a numeric time axis (uniform years per pixel,
+  // history and projection to scale); everything else keeps the category axis.
+  const timeAxis = !!metric.projection;
+  const spanYears = timeAxis && rows.length > 1
+    ? (rows[rows.length - 1].t - rows[0].t) / 31_557_600_000 : 0;
+  const timeTick = (t) => (spanYears > 6
+    ? String(new Date(t).getUTCFullYear())
+    : fmtDay(new Date(t).toISOString().slice(0, 10)));
+
+  // Halving markers at their exact dates. The projection runs to the end of
+  // issuance (~29 future halvings), so only the first few estimated markers
+  // get labels; the rest stay unlabeled hairlines.
   const halvingMarks = useMemo(() => {
     if (!data?.halvings || rows.length === 0) return [];
-    const days = rows.map(r => r.day);
-    const first = days[0], last = days[days.length - 1];
+    const first = rows[0].t, last = rows[rows.length - 1].t;
     let labeledEst = 0;
     return data.halvings
-      .filter(h => (h.estimated ? showProj : true) && h.day >= first && h.day <= last)
+      .map(h => ({ ...h, x: Date.parse(h.day) }))
+      .filter(h => (h.estimated ? showProj : true) && h.x >= first && h.x <= last)
       .map(h => ({
         ...h,
-        x: days.reduce((best, d) =>
-          (Math.abs(Date.parse(d) - Date.parse(h.day)) < Math.abs(Date.parse(best) - Date.parse(h.day)) ? d : best)),
         label: !h.estimated || labeledEst++ < 3 ? (h.estimated ? '~' : '') + h.day.slice(0, 4) : null,
       }));
   }, [data, rows, showProj]);
@@ -331,7 +340,10 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
           <div className="chartwrap"><ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid stroke="var(--ink-line)" strokeOpacity={0.4} vertical={false} />
-              <XAxis dataKey="day" tickFormatter={fmtDay} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={60} />
+              {timeAxis
+                ? <XAxis dataKey="t" type="number" scale="time" domain={['dataMin', 'dataMax']}
+                    tickFormatter={timeTick} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={60} />
+                : <XAxis dataKey="day" tickFormatter={fmtDay} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={60} />}
               <YAxis yAxisId="m" scale={logScale ? 'log' : 'linear'} domain={['auto', 'auto']}
                 allowDataOverflow tick={{ fill: 'var(--text-faint)', fontSize: 11 }}
                 tickFormatter={(v) => compact(v)} width={64} />
@@ -343,13 +355,16 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
               {!logScale && (metric.zones ?? []).map((z, i) => z.tone === 'line'
                 ? <ReferenceLine key={i} yAxisId="m" y={z.from * unitFactor} stroke="var(--text-faint)" strokeDasharray="4 4" />
                 : <ReferenceArea key={i} yAxisId="m" y1={z.from * unitFactor} y2={z.to * unitFactor} fill={toneColor(z.tone)} stroke="none" />)}
-              {halvingMarks.map(h => (
+              {halvingMarks.map((h, i) => (
                 <ReferenceLine key={h.height} yAxisId="m" x={h.x} stroke="var(--text-faint)" strokeDasharray="3 5"
                   strokeOpacity={h.label ? 1 : 0.45}
-                  label={h.label ? { value: h.label, position: 'insideTopLeft', fill: 'var(--text-faint)', fontSize: 10 } : undefined} />
+                  label={h.label ? {
+                    value: h.label, position: 'insideTopLeft',
+                    fill: 'var(--text-faint)', fontSize: 10, dy: i % 2 ? 14 : 2,
+                  } : undefined} />
               ))}
               <Tooltip contentStyle={{ background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
-                labelFormatter={fmtDay}
+                labelFormatter={timeAxis ? (t) => fmtDay(new Date(t).toISOString().slice(0, 10)) : fmtDay}
                 formatter={(v, n) => [fmt(Number(v), n === 'price' ? 'usd' : metric.format, displayUnit), seriesLabel(n)]} />
               {(data.columns ?? []).map((c, i) => (
                 <Line key={c} yAxisId="m" dataKey={c} dot={false} isAnimationActive={false}
