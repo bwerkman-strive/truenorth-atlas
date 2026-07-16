@@ -277,9 +277,12 @@ test('/api/urpd serves the latest distribution; series/cycles reject the slug', 
     assert.equal(r.day, D2, 'latest finalized day wins');
     assert.equal(r.price, 200);
     assert.deepEqual(r.buckets, [{ p: 100, v: 50 }, { p: 198, v: 100 }]);
+    // avg = the day's realized price: $25,000 realized cap over 150 BTC.
+    assert.ok(Math.abs(r.avg - 25_000 / 150) < 1e-6, `avg=${r.avg}`);
 
     const byDay = await (await fetch(base + `/api/urpd?day=${D1}`)).json();
     assert.equal(byDay.day, D1);
+    assert.equal(byDay.avg, 100, 'D1 realized price: all coins minted at the $100 close');
 
     assert.equal((await fetch(base + '/api/urpd?day=2030-01-01')).status, 404);
     assert.equal((await fetch(base + '/api/series/cost-basis-distribution')).status, 400,

@@ -106,13 +106,16 @@ app.get('/api/urpd', async (req, res) => {
   const day = DAY_RE.test(req.query.day ?? '') ? req.query.day : null;
   try {
     const r = await pool.query(
-      `SELECT day::text AS day, price::float AS price, urpd FROM metrics_daily
+      `SELECT day::text AS day, price::float AS price, realized_price::float AS avg, urpd
+       FROM metrics_daily
        WHERE urpd IS NOT NULL ${day ? 'AND day = $1' : ''}
        ORDER BY day DESC LIMIT 1`, day ? [day] : []);
     if (!r.rows.length) return res.status(404).json({ error: 'no finalized distribution for that day yet' });
     const row = r.rows[0];
     cache(res);
-    res.json({ slug: 'cost-basis-distribution', day: row.day, price: row.price, ...row.urpd });
+    // avg: the supply-weighted mean of the distribution = realized price,
+    // taken from the same finalized row rather than re-derived from buckets.
+    res.json({ slug: 'cost-basis-distribution', day: row.day, price: row.price, avg: row.avg, ...row.urpd });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

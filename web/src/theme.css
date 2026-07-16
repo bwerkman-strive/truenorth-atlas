@@ -112,6 +112,7 @@ button { font-family: inherit; }
 .detail-hd h1 { font-family: var(--font-display); font-size: clamp(27px, 3.8vw, 40px); font-weight: 400; margin: 6px 0 4px; }
 .detail-hd .short { color: var(--text-dim); max-width: 760px; }
 .bigval { font-family: var(--font-data); font-size: 26px; font-weight: 500; color: var(--bone); }
+.bigval-sub { font-family: var(--font-ui); font-size: 13px; font-weight: 400; color: var(--text-dim); margin-left: 10px; }
 
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
 .toolbar .grp { display: flex; border: 1px solid var(--ink-line); border-radius: 8px; overflow: hidden; }

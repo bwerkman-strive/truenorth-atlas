@@ -203,6 +203,11 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
         {scalar && (
           <div className="bigval">{fmt(unitOpts ? scaleVal(latestVal) : latestVal, metric.format, displayUnit)}</div>
         )}
+        {metric.kind === 'urpd' && urpd?.avg != null && (
+          <div className="bigval">
+            {fmt(urpd.avg, 'usd')}<span className="bigval-sub">average cost basis</span>
+          </div>
+        )}
       </div>
 
       <div className="toolbar">
