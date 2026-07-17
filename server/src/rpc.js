@@ -16,7 +16,11 @@ let cachedAgent = null;
 
 function agentFor(url) {
   if (config.torSocksProxy) {
-    if (!cachedAgent) cachedAgent = new SocksProxyAgent(config.torSocksProxy, { keepAlive: true });
+    // timeout also bounds the SOCKS handshake itself; without it a wedged Tor
+    // daemon that accepts the connection but never completes CONNECT would
+    // hang the request forever (the http-level timeout only arms after the
+    // proxy hands over a socket).
+    if (!cachedAgent) cachedAgent = new SocksProxyAgent(config.torSocksProxy, { keepAlive: true, timeout: config.rpcTimeoutMs });
     return cachedAgent;
   }
   if (!cachedAgent) {

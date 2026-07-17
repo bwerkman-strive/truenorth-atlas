@@ -253,6 +253,25 @@ export async function pruneSpent(tip) {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Stall watchdog. A Tor circuit that dies mid-replay leaves the transport
+// erroring (or hanging) while the loop's retry-forever design keeps the
+// process alive, so from outside the worker looks healthy but synced height
+// freezes. Rather than trying to heal a wedged Tor daemon in-process, exit:
+// the platform restarts background workers, and a fresh container bootstraps
+// fresh circuits. touch() marks progress; onStall fires once idle exceeds
+// thresholdMs. thresholdMs <= 0 disables (returns inert handles).
+export function createStallWatchdog({ thresholdMs, checkEveryMs = 60_000, onStall }) {
+  if (!(thresholdMs > 0)) return { touch: () => {}, stop: () => {} };
+  let last = Date.now();
+  const timer = setInterval(() => {
+    const idleMs = Date.now() - last;
+    if (idleMs > thresholdMs) onStall(idleMs);
+  }, checkEveryMs);
+  timer.unref(); // never hold the process open on its own
+  return { touch: () => { last = Date.now(); }, stop: () => clearInterval(timer) };
+}
+
 export async function main() {
   await acquireSyncLock(); // before any write, including migrate
   await migrate();
@@ -266,6 +285,16 @@ export async function main() {
   let lastPriceSync = Date.now();
   let lastPrune = 0;
 
+  // Armed after boot (lock wait and initial price backfill are legitimately
+  // slow); from here on, a loop pass must succeed every syncStallExitMs.
+  const watchdog = createStallWatchdog({
+    thresholdMs: config.syncStallExitMs,
+    onStall: (idleMs) => {
+      log.fatal({ idleMs }, 'no sync progress within the stall window; exiting for a clean restart');
+      process.exit(1);
+    },
+  });
+
   for (;;) {
     try {
       // Refresh prices every 6h so new UTC days have candles.
@@ -275,6 +304,7 @@ export async function main() {
 
       let ourTip = await checkReorg();
       const info = await rpc.getBlockchainInfo();
+      watchdog.touch(); // the node answered: transport is alive
       const nodeTip = info.blocks;
 
       if (ourTip >= nodeTip) {
@@ -322,6 +352,7 @@ export async function main() {
       }
 
       if (to - lastPrune > 1000) { await pruneSpent(to); lastPrune = to; }
+      watchdog.touch(); // full batch (fetch, process, snapshots) landed
     } catch (err) {
       log.error({ err: err.message }, 'sync loop error, retrying in 15s');
       await new Promise(r => setTimeout(r, 15000));

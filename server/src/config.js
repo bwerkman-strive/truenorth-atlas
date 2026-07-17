@@ -41,6 +41,9 @@ export const config = {
   pruneDepth: int('PRUNE_DEPTH', 144),                // keep spent UTXOs this many blocks for reorg safety
   reorgScanDepth: int('REORG_SCAN_DEPTH', 12),
   pollIntervalMs: int('POLL_INTERVAL_MS', 30000),     // tip poll cadence once synced
+  // Exit (for a platform restart with a fresh Tor daemon) after this long
+  // without a successful sync-loop pass. 0 disables the watchdog.
+  syncStallExitMs: int('SYNC_STALL_EXIT_MS', 30 * 60000),
   sthDays: int('STH_THRESHOLD_DAYS', 155),            // short/long-term holder boundary
   asoprMinAgeSec: int('ASOPR_MIN_AGE_SECONDS', 3600), // adjusted SOPR: ignore < 1h relays
 
