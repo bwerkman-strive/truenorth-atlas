@@ -73,6 +73,16 @@ test('zone bands are well-formed', () => {
   }
 });
 
+test('overlayPrice stays retired: price rides in columns, never as a flag', () => {
+  // Metrics that want BTC price on the chart list 'price' in `columns`; the
+  // UI offers its overlay toggle only when it is absent. A metric declaring
+  // both would draw the price line twice (the bug that retired the flag).
+  for (const m of METRICS) {
+    assert.ok(!('overlayPrice' in m),
+      `metric "${m.slug}" declares overlayPrice; add 'price' to its columns instead`);
+  }
+});
+
 test('bySlug index matches the metric list', () => {
   for (const m of METRICS) assert.equal(bySlug[m.slug], m);
 });

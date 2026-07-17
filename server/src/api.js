@@ -154,10 +154,13 @@ app.get('/api/catalog', (_req, res) => {
   cache(res);
   res.json({
     categories: CATEGORIES,
-    metrics: METRICS.map(({ slug, name, category, format, unit, short, explain, method, zones, kind, logDefault, overlayPrice, unitToggle, projection }) => ({
+    metrics: METRICS.map(({ slug, name, category, format, unit, short, explain, method, zones, kind, logDefault, unitToggle, projection, column, columns }) => ({
       slug, name, category, format, unit, short, explain, method,
       zones: zones ?? [], kind: kind ?? 'line',
-      logDefault: !!logDefault, overlayPrice: !!overlayPrice,
+      // The series /api/series/:slug returns; lets the UI know when price is
+      // already part of the chart (no overlay toggle) without a second flag.
+      columns: columns ?? [column],
+      logDefault: !!logDefault,
       unitToggle: unitToggle ?? null, projection: !!projection,
     })),
   });
@@ -205,7 +208,7 @@ app.get('/api/series/:slug', async (req, res) => {
   const from = DAY_RE.test(req.query.from ?? '') ? req.query.from : '2010-01-01';
   const to = DAY_RE.test(req.query.to ?? '') ? req.query.to : '2100-01-01';
   const cols = (m.columns ?? [m.column]).filter(c => IDENT_RE.test(c));
-  const withPrice = m.overlayPrice || req.query.price === '1';
+  const withPrice = req.query.price === '1';
   try {
     const sel = ['day::text AS day', ...cols, ...(withPrice && !cols.includes('price') ? ['price'] : [])];
     const r = await pool.query(

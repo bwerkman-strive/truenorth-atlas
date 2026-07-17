@@ -31,7 +31,7 @@ export const METRICS = [
   },
   {
     slug: 'realized-price', column: 'realized_price', columns: ['realized_price', 'price'], name: 'Realized Price', category: 'valuation', ...usd,
-    logDefault: true, overlayPrice: true,
+    logDefault: true,
     short: 'The average price at which every coin in existence last moved.',
     explain: 'Think of it as the market\'s aggregate cost basis. When spot trades below realized price, the average holder is underwater, historically the signature of bear-market capitulation floors. When spot is far above it, the average holder sits on large unrealized gains.',
     method: 'Realized capitalization ÷ circulating supply. Each unspent output is valued at the USD close of the day it was created; coins that predate a market price carry a cost basis of zero.',
@@ -74,7 +74,7 @@ export const METRICS = [
   },
   {
     slug: 'balanced-price', column: 'balanced_price', columns: ['balanced_price', 'price'], name: 'Balanced Price', category: 'valuation', ...usd,
-    logDefault: true, overlayPrice: true,
+    logDefault: true,
     short: 'Realized price minus transferred price: a "fair value" floor model.',
     explain: 'Balanced price subtracts the value time-weighted out of coins (transferred price) from what holders paid (realized price), leaving a conservative estimate of accumulated, un-spent cost basis. Spot touching balanced price has historically coincided with deep bear-market floors.',
     method: 'Realized price − transferred price, where transferred price is cumulative USD-denominated coin-days destroyed ÷ cumulative coin-days created.',
@@ -102,7 +102,7 @@ export const METRICS = [
   },
   {
     slug: 'true-market-mean', column: 'true_market_mean', columns: ['true_market_mean', 'price'], name: 'True Market Mean', category: 'valuation', ...usd,
-    logDefault: true, overlayPrice: true,
+    logDefault: true,
     short: 'The cost basis of active investors, with miner coins and dormant history discounted.',
     explain: 'From the cointime framework: strip miner-earned capital out of realized cap (investor cap) and weight supply by how alive it actually is (liveliness), and what remains is the average price paid by investors who are actually in the market. Spot below the true market mean has marked deep-discount regimes; it is the centerline the AVIV ratio oscillates around.',
     method: 'Investor cap ÷ active supply, where investor cap = realized cap − thermocap and active supply = liveliness × circulating supply. Equivalently, price ÷ AVIV.',
@@ -119,14 +119,14 @@ export const METRICS = [
   },
   {
     slug: 'terminal-price', column: 'terminal_price', columns: ['terminal_price', 'price'], name: 'Terminal Price', category: 'valuation', ...usd,
-    logDefault: true, overlayPrice: true,
+    logDefault: true,
     short: 'A cycle-top price model built from cumulative coin-day destruction.',
     explain: 'Terminal price scales transferred price (the time-weighted value at which coins have historically moved) by 21, an empirical multiple that has capped every prior cycle peak. It is a ceiling model: most useful when spot approaches it, historically the zone where old-coin distribution overwhelms fresh demand.',
     method: 'Transferred price × 21, where transferred price is cumulative USD coin-days destroyed ÷ cumulative coin-days created.',
   },
   {
     slug: 'delta-price', column: 'delta_price', columns: ['delta_price', 'price'], name: 'Delta Price', category: 'valuation', ...usd,
-    logDefault: true, overlayPrice: true,
+    logDefault: true,
     short: 'A bottom model: realized cap minus its own all-time average, per coin.',
     explain: 'Delta price measures how far invested capital (realized cap) sits above the market\'s long-run average valuation. Because both inputs move slowly, it forms a deep floor that spot has only touched at generational bottoms; it is the lower band to terminal price\'s ceiling.',
     method: '(Realized cap − average cap) ÷ circulating supply, where average cap is the cumulative mean of daily market cap since inception.',
@@ -268,14 +268,14 @@ export const METRICS = [
   },
   {
     slug: 'sth-cost-basis', column: 'sth_cost_basis', columns: ['sth_cost_basis', 'price'], name: 'STH Cost Basis', category: 'cohorts', ...usd,
-    logDefault: true, overlayPrice: true,
+    logDefault: true,
     short: 'Average acquisition price of coins younger than 155 days.',
     explain: 'The short-term holder cost basis is the most important support/resistance level on-chain. In uptrends, price bouncing off it shows recent buyers defending; losing it decisively has preceded every deeper correction, because it flips the marginal buyer underwater.',
     method: 'Σ (value × creation price) ÷ Σ value over UTXOs younger than 155 days.',
   },
   {
     slug: 'lth-cost-basis', column: 'lth_cost_basis', columns: ['lth_cost_basis', 'price'], name: 'LTH Cost Basis', category: 'cohorts', ...usd,
-    logDefault: true, overlayPrice: true,
+    logDefault: true,
     short: 'Average acquisition price of coins 155 days and older.',
     explain: 'The long-term holder cost basis is the bedrock valuation of the committed base. Spot trading below it (veterans underwater) has occurred only in the terminal phase of bear markets and has historically defined generational accumulation ranges.',
     method: 'Σ (value × creation price) ÷ Σ value over UTXOs aged 155 days or more.',

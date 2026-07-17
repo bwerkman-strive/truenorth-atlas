@@ -46,7 +46,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   // Projection metrics open on full history: the schedule is the point.
   const [range, setRange] = useState(metric.kind === 'stacked' || metric.projection ? 'all' : '4y');
   const [logScale, setLogScale] = useState(!!metric.logDefault);
-  const [showPrice, setShowPrice] = useState(!!metric.overlayPrice);
+  const [showPrice, setShowPrice] = useState(false);
   const [view, setView] = useState('series'); // 'series' | 'cycles'
   const [data, setData] = useState(null);
   const [cycles, setCycles] = useState(null);
@@ -58,6 +58,9 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   // Scalar metrics get the full toolbar; 'stacked' and 'urpd' kinds render
   // their own chart form with a reduced toolbar.
   const scalar = metric.kind !== 'stacked' && metric.kind !== 'urpd';
+  // The overlay only exists for charts that don't already draw BTC price as
+  // one of their native series (and not for the price chart itself).
+  const canOverlayPrice = metric.slug !== 'price' && !(metric.columns ?? []).includes('price');
 
   // Optional display-only unit toggle (catalog `unitToggle`): values are
   // stored, served, and alerted in the first unit; the rest are rescalings.
@@ -67,7 +70,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   const displayUnit = unitOpts?.[unitIdx]?.unit ?? metric.unit;
   const scaleVal = (v) => (v === null || v === undefined || v === '' ? null : Number(v) * unitFactor);
 
-  useEffect(() => { setView('series'); setCycles(null); setUnitIdx(0); setShowProj(true); }, [metric.slug]);
+  useEffect(() => { setView('series'); setCycles(null); setUnitIdx(0); setShowProj(true); setShowPrice(false); }, [metric.slug]);
 
   useEffect(() => {
     if (metric.kind === 'urpd') {
@@ -242,8 +245,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             </button>
           </div>
         )}
-        {view === 'series' && scalar && metric.slug !== 'price'
-          && !(metric.columns ?? []).includes('price') && (
+        {view === 'series' && scalar && canOverlayPrice && (
           <div className="grp">
             <button className={showPrice ? 'on' : ''} onClick={() => setShowPrice(!showPrice)}>
               {showPrice ? '✓ ' : ''}BTC price overlay
@@ -352,7 +354,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
               <YAxis yAxisId="m" scale={logScale ? 'log' : 'linear'} domain={['auto', 'auto']}
                 allowDataOverflow tick={{ fill: 'var(--text-faint)', fontSize: 11 }}
                 tickFormatter={(v) => compact(v)} width={64} />
-              {showPrice && metric.slug !== 'price' && (
+              {showPrice && canOverlayPrice && (
                 <YAxis yAxisId="p" orientation="right" scale="log" domain={['auto', 'auto']}
                   allowDataOverflow tick={{ fill: 'var(--btc)', fontSize: 11, opacity: 0.7 }}
                   tickFormatter={(v) => '$' + compact(v)} width={64} />
@@ -381,7 +383,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                   stroke={seriesColor(data.columns[0], 0)} strokeWidth={1.7}
                   strokeDasharray="6 4" strokeOpacity={0.75} connectNulls />
               )}
-              {showPrice && metric.slug !== 'price' && (
+              {showPrice && canOverlayPrice && (
                 <Line yAxisId="p" dataKey="price" dot={false} isAnimationActive={false}
                   stroke="var(--btc)" strokeWidth={1.2} strokeOpacity={0.75} connectNulls />
               )}
