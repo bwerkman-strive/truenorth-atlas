@@ -37,6 +37,13 @@ const WAVE_COLORS = [
   '#4fd7d0', '#58a8ff', '#5f7ff2', '#7b6cf0', '#9a5fd9', '#b04fc4',
 ];
 
+// Shared tooltip chrome. Item text color comes from each series' own stroke/
+// fill; charts whose series carry no usable color (the URPD bars, colored per
+// Cell) must set an explicit itemStyle or recharts falls back to black.
+const TOOLTIP_PROPS = {
+  contentStyle: { background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 },
+};
+
 function toneColor(t) {
   return t === 'hot' ? 'rgba(255,107,74,0.10)' : t === 'warm' ? 'rgba(247,179,74,0.10)'
     : t === 'cold' ? 'rgba(88,168,255,0.10)' : 'transparent';
@@ -274,7 +281,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                   tickFormatter={(d) => d + 'd'} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} />
                 <YAxis scale={logScale ? 'log' : 'linear'} domain={['auto', 'auto']} allowDataOverflow
                   tick={{ fill: 'var(--text-faint)', fontSize: 11 }} tickFormatter={(v) => compact(v)} width={64} />
-                <Tooltip contentStyle={{ background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
+                <Tooltip {...TOOLTIP_PROPS}
                   labelFormatter={(d) => `Day ${d} of epoch`}
                   formatter={(v, n) => [fmt(Number(v), metric.format, displayUnit), n.replace('epoch', 'Epoch ')]} />
                 {cycles.epochs.map(e => (
@@ -306,7 +313,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                   tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={56} />
                 <YAxis tickFormatter={(v) => compact(v)}
                   tick={{ fill: 'var(--text-faint)', fontSize: 11 }} width={64} />
-                <Tooltip contentStyle={{ background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
+                <Tooltip {...TOOLTIP_PROPS} itemStyle={{ color: 'var(--bone)' }}
                   cursor={{ fill: 'rgba(255,255,255,0.04)' }}
                   labelFormatter={(p) => `Acquired $${compact(Number(p))} – $${compact(Number(p) + urpd.width)}`}
                   formatter={(v) => [compact(Number(v)) + ' BTC', 'Supply']} />
@@ -334,7 +341,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             <AreaChart data={rows} stackOffset="expand" margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <XAxis dataKey="day" tickFormatter={fmtDay} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={60} />
               <YAxis tickFormatter={(v) => (v * 100).toFixed(0) + '%'} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} />
-              <Tooltip contentStyle={{ background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
+              <Tooltip {...TOOLTIP_PROPS}
                 labelFormatter={fmtDay} formatter={(v, n) => [(v * 100).toFixed(2) + '%', n]} />
               {waveKeys.map((k, i) => (
                 <Area key={k} dataKey={k} stackId="1" stroke="none"
@@ -370,7 +377,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                     fill: 'var(--text-faint)', fontSize: 10, dy: i % 2 ? 14 : 2,
                   } : undefined} />
               ))}
-              <Tooltip contentStyle={{ background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 }}
+              <Tooltip {...TOOLTIP_PROPS}
                 labelFormatter={timeAxis ? (t) => fmtDay(new Date(t).toISOString().slice(0, 10)) : fmtDay}
                 formatter={(v, n) => [fmt(Number(v), n === 'price' ? 'usd' : metric.format, displayUnit), seriesLabel(n)]} />
               {(data.columns ?? []).map((c, i) => (
