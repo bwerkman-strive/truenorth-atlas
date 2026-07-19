@@ -147,3 +147,28 @@ test('loadHeightMeta rebuilds the in-memory index from the DB', async () => {
   assert.equal(heightMeta[2].d, '2024-06-01');
   assert.equal(heightMeta[3], undefined, 'rolled-back height absent');
 });
+
+// The reorg scan treats a failed probe as "unknown" and keeps going, so an
+// unreachable node makes it walk every height, burning the full RPC retry
+// budget each time, and then return the tip as though nothing were wrong. The
+// progress signal is what distinguishes that from a healthy scan: it only
+// fires on a probe the node actually answered.
+test('checkReorg: a node answering nothing emits no progress signal', async () => {
+  nodeHashes = {}; // every getblockhash errors
+  let ticks = 0;
+  const tip = await checkReorg(() => { ticks++; });
+  assert.equal(tip, 2, 'scan completes and leaves the tip alone');
+  assert.equal(ticks, 0, 'no successful probe means nothing feeds the watchdog');
+});
+
+test('checkReorg: an answering node emits progress per successful probe', async () => {
+  nodeHashes = { 1: 'aa11', 2: 'aa22' };
+  let ticks = 0;
+  assert.equal(await checkReorg(() => { ticks++; }), 2);
+  assert.equal(ticks, 1, 'agreement at the tip returns after a single probe');
+});
+
+test('checkReorg: still callable without a progress callback', async () => {
+  nodeHashes = { 1: 'aa11', 2: 'aa22' };
+  assert.equal(await checkReorg(), 2);
+});

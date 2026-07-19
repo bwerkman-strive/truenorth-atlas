@@ -78,12 +78,25 @@ export async function releaseSyncLock() {
 // ---------------------------------------------------------------------------
 // Reorg handling: verify our stored hash for recent heights against the node;
 // if they diverge, roll everything above the fork point back.
-export async function checkReorg() {
+// onProgress fires per successful node probe: a scan that is merely slow keeps
+// the stall watchdog fed, while one whose probes all fail does not.
+export async function checkReorg(onProgress) {
   const tip = await tipHeight();
   if (tip < 0) return tip;
+  let probeFailures = 0;
   for (let h = tip; h > Math.max(-1, tip - config.reorgScanDepth); h--) {
     const ours = await pool.query('SELECT hash FROM blocks WHERE height=$1', [h]);
-    const theirs = await rpc.getBlockHash(h).catch(() => null);
+    // A failed probe is indistinguishable from "no answer yet", so we keep
+    // scanning — but it must not be silent. Each failure can burn the full RPC
+    // retry budget, so a dead node turns this loop into reorgScanDepth * that
+    // budget of dead air; these warnings are the only trace of it.
+    const theirs = await rpc.getBlockHash(h).catch((e) => {
+      probeFailures++;
+      log.warn({ height: h, probeFailures, err: e.message },
+        'reorg probe failed; node unreachable at this height');
+      return null;
+    });
+    if (theirs) onProgress?.();
     if (theirs && ours.rows[0]?.hash === theirs) return tip; // consistent
     if (theirs && ours.rows[0]?.hash !== theirs) {
       log.warn({ height: h }, 'reorg detected, rolling back');
@@ -272,6 +285,44 @@ export function createStallWatchdog({ thresholdMs, checkEveryMs = 60_000, onStal
   return { touch: () => { last = Date.now(); }, stop: () => clearInterval(timer) };
 }
 
+// ---------------------------------------------------------------------------
+// Phase instrumentation. The loop between "loaded block index into memory" and
+// a watchdog exit used to emit nothing at all, so a stall gave no clue which
+// stage it died in — RPC, a DB transaction, or a day snapshot all look
+// identical from outside. Every stage now runs inside phase(), which keeps a
+// stack of what is currently in flight so the watchdog's fatal log can name it.
+const phaseStack = [];
+
+// "fetchBlocks" or, when nested, "batch > snapshotDay". null when idle.
+export function inFlightPhase() {
+  return phaseStack.length ? phaseStack.map(p => p.name).join(' > ') : null;
+}
+
+// How long the innermost in-flight stage has been running (null when idle).
+export function inFlightPhaseMs() {
+  return phaseStack.length ? Date.now() - phaseStack[phaseStack.length - 1].t0 : null;
+}
+
+// Healthy stages log at debug to keep replay quiet; anything past
+// syncSlowPhaseMs escalates to info so a developing stall is visible before
+// the watchdog fires. Failures always log — this is the path that used to
+// swallow everything.
+export async function phase(name, fields, fn) {
+  const entry = { name, t0: Date.now() };
+  phaseStack.push(entry);
+  try {
+    const out = await fn();
+    const ms = Date.now() - entry.t0;
+    log[ms >= config.syncSlowPhaseMs ? 'info' : 'debug']({ phase: name, ms, ...fields }, 'phase done');
+    return out;
+  } catch (err) {
+    log.warn({ phase: name, ms: Date.now() - entry.t0, ...fields, err: err.message }, 'phase failed');
+    throw err;
+  } finally {
+    phaseStack.pop();
+  }
+}
+
 export async function main() {
   await acquireSyncLock(); // before any write, including migrate
   await migrate();
@@ -290,7 +341,10 @@ export async function main() {
   const watchdog = createStallWatchdog({
     thresholdMs: config.syncStallExitMs,
     onStall: (idleMs) => {
-      log.fatal({ idleMs }, 'no sync progress within the stall window; exiting for a clean restart');
+      // phase/phaseMs name the stage that actually wedged, which is the whole
+      // reason this log exists — idleMs alone never identified the culprit.
+      log.fatal({ idleMs, phase: inFlightPhase(), phaseMs: inFlightPhaseMs() },
+        'no sync progress within the stall window; exiting for a clean restart');
       process.exit(1);
     },
   });
@@ -299,11 +353,13 @@ export async function main() {
     try {
       // Refresh prices every 6h so new UTC days have candles.
       if (Date.now() - lastPriceSync > 6 * 3600e3) {
-        await syncPrices(log); bustPriceCache(); lastPriceSync = Date.now();
+        await phase('syncPrices', {}, async () => {
+          await syncPrices(log); bustPriceCache(); lastPriceSync = Date.now();
+        });
       }
 
-      let ourTip = await checkReorg();
-      const info = await rpc.getBlockchainInfo();
+      let ourTip = await phase('checkReorg', {}, () => checkReorg(watchdog.touch));
+      const info = await phase('getBlockchainInfo', {}, () => rpc.getBlockchainInfo());
       watchdog.touch(); // the node answered: transport is alive
       const nodeTip = info.blocks;
 
@@ -319,7 +375,8 @@ export async function main() {
       const from = ourTip + 1;
       const to = Math.min(nodeTip, from + config.syncBatchBlocks - 1);
       const heights = Array.from({ length: to - from + 1 }, (_, i) => from + i);
-      const blocks = await fetchBlocks(heights);
+      const blocks = await phase('fetchBlocks', { from, to },
+        () => fetchBlocks(heights, watchdog.touch));
 
       let run = [];
       // Seed from the day of our stored tip so a boundary that falls exactly
@@ -327,8 +384,10 @@ export async function main() {
       let runDay = ourTip >= 0 ? heightMeta[ourTip]?.d ?? null : null;
       const flush = async () => {
         if (!run.length) return;
-        await processBlocks(run);
+        const span = { from: run[0].height, to: run[run.length - 1].height };
+        await phase('processBlocks', span, () => processBlocks(run));
         run = [];
+        watchdog.touch(); // blocks are committed: real, durable progress
       };
 
       for (const b of blocks) {
@@ -336,7 +395,8 @@ export async function main() {
         if (runDay !== null && d !== runDay) {
           await flush();
           // The UTXO set now reflects the exact end of `runDay`: finalize it.
-          await snapshotAndRollupDay(runDay, log);
+          await phase('snapshotDay', { day: runDay }, () => snapshotAndRollupDay(runDay, log));
+          watchdog.touch(); // a full-UTXO-set snapshot is slow but is progress
         }
         runDay = d;
         run.push(b);
@@ -351,7 +411,10 @@ export async function main() {
         log.info({ height: to, nodeTip }, 'initial sync progress');
       }
 
-      if (to - lastPrune > 1000) { await pruneSpent(to); lastPrune = to; }
+      if (to - lastPrune > 1000) {
+        await phase('pruneSpent', { to }, () => pruneSpent(to));
+        lastPrune = to;
+      }
       watchdog.touch(); // full batch (fetch, process, snapshots) landed
     } catch (err) {
       log.error({ err: err.message }, 'sync loop error, retrying in 15s');

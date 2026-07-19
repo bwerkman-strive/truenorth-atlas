@@ -90,7 +90,10 @@ export const rpc = {
 };
 
 // Map heights -> parsed blocks with limited concurrency.
-export async function fetchBlocks(heights) {
+// onProgress fires after each block lands, so callers (the sync worker's stall
+// watchdog) can tell a slow-but-advancing batch from a wedged transport — a
+// whole batch over Tor can outlast the stall window while making real headway.
+export async function fetchBlocks(heights, onProgress) {
   const results = new Array(heights.length);
   let i = 0;
   async function lane() {
@@ -98,6 +101,7 @@ export async function fetchBlocks(heights) {
       const idx = i++;
       const hash = await rpc.getBlockHash(heights[idx]);
       results[idx] = await rpc.getBlockV3(hash);
+      onProgress?.();
     }
   }
   await Promise.all(Array.from({ length: Math.min(config.rpcConcurrency, heights.length) }, lane));

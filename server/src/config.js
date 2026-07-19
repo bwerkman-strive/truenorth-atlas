@@ -44,6 +44,9 @@ export const config = {
   // Exit (for a platform restart with a fresh Tor daemon) after this long
   // without a successful sync-loop pass. 0 disables the watchdog.
   syncStallExitMs: int('SYNC_STALL_EXIT_MS', 30 * 60000),
+  // A sync stage slower than this logs at info instead of debug, so a stall
+  // announces itself while it is still developing.
+  syncSlowPhaseMs: int('SYNC_SLOW_PHASE_MS', 60000),
   sthDays: int('STH_THRESHOLD_DAYS', 155),            // short/long-term holder boundary
   asoprMinAgeSec: int('ASOPR_MIN_AGE_SECONDS', 3600), // adjusted SOPR: ignore < 1h relays
 
