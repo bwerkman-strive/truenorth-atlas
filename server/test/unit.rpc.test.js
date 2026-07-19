@@ -65,6 +65,27 @@ test('fetchBlocks preserves height order under concurrency', async () => {
   assert.deepEqual(blocks.map(b => b.height), [5, 6, 7, 8, 9, 10]);
 });
 
+// The sync worker's stall watchdog feeds on this: without a per-block signal a
+// batch that is slow but advancing looks identical to a wedged transport, and
+// the watchdog kills the worker mid-progress.
+test('fetchBlocks reports progress per block', async () => {
+  nextResponse = (body) => body.method === 'getblockhash'
+    ? ({ id: body.id, result: 'hash-' + body.params[0] })
+    : ({ id: body.id, result: { hash: body.params[0], height: Number(body.params[0].split('-')[1]) } });
+  let ticks = 0;
+  const blocks = await fetchBlocks([1, 2, 3, 4], () => { ticks++; });
+  assert.equal(blocks.length, 4);
+  assert.equal(ticks, 4, 'one progress tick per block fetched');
+});
+
+test('fetchBlocks works without a progress callback', async () => {
+  nextResponse = (body) => body.method === 'getblockhash'
+    ? ({ id: body.id, result: 'hash-' + body.params[0] })
+    : ({ id: body.id, result: { hash: body.params[0], height: Number(body.params[0].split('-')[1]) } });
+  const blocks = await fetchBlocks([1, 2]);
+  assert.deepEqual(blocks.map(b => b.height), [1, 2]);
+});
+
 test('rejects on malformed (non-JSON) response', async () => {
   const bad = http.createServer((_q, res) => res.end('<html>gateway error</html>'));
   await new Promise(r => bad.listen(0, '127.0.0.1', r));
