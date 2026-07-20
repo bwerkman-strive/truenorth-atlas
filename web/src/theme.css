@@ -282,7 +282,10 @@ button { font-family: inherit; }
 
 /* Share menu: the trigger keeps the toolbar's pill shape; the popover hangs
    off its right edge so it never pushes the toolbar wider. */
-.share-menu { position: relative; overflow: visible; }
+/* Must out-specify `.toolbar .grp`, which sets overflow:hidden to clip the
+   segmented pill's corners. That rule would otherwise clip the popover away
+   entirely, since it is positioned outside the group's box. */
+.toolbar .share-menu { position: relative; overflow: visible; }
 .share-pop {
   position: absolute; top: calc(100% + 6px); right: 0; z-index: 20;
   display: flex; flex-direction: column; min-width: 172px;
