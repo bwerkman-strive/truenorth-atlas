@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ResponsiveContainer, ComposedChart, Line, Area, AreaChart, Bar, BarChart, Cell,
   XAxis, YAxis, Tooltip, ReferenceArea, ReferenceLine, CartesianGrid,
 } from 'recharts';
 import { api, fmt, compact, fmtDay } from '../api.js';
+import { chartToPngBlob } from '../chartImage.js';
 import AlertForm from '../components/AlertForm.jsx';
 
 const RANGES = [
@@ -61,6 +62,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   const [err, setErr] = useState(null);
   const [copied, setCopied] = useState('');   // transient confirmation label
   const [shareOpen, setShareOpen] = useState(false);
+  const chartBoxRef = useRef(null);
   const [unitIdx, setUnitIdx] = useState(0);
   const [showProj, setShowProj] = useState(true);
   // Scalar metrics get the full toolbar; 'stacked' and 'urpd' kinds render
@@ -139,31 +141,37 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
     } catch { window.prompt('Copy this share link:', api.shareUrl(metric.slug)); }
   };
 
-  const copyCard = async () => {
+  const copyChart = async () => {
     setShareOpen(false);
-    const url = api.cardUrl(metric.slug);
+    // Safari only accepts a Promise here and requires the write to be issued in
+    // the same task as the click, so rasterization is passed unresolved rather
+    // than awaited first.
+    const png = chartToPngBlob(chartBoxRef.current, {
+      title: metric.name,
+      value: headlineValue,
+    });
     try {
-      // Safari only accepts a Promise here and requires the write to happen in
-      // the same task as the click, so the fetch must be passed unresolved
-      // rather than awaited first.
-      await navigator.clipboard.write([
-        new ClipboardItem({ 'image/png': fetch(url).then(r => {
-          if (!r.ok) throw new Error(`card ${r.status}`);
-          return r.blob();
-        }) }),
-      ]);
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
       flash('Chart copied');
     } catch {
-      // Firefox lacks image clipboard support, and any fetch failure lands here
-      // too: open the card so it can be saved or copied by hand.
-      window.open(url, '_blank', 'noopener');
+      // Firefox has no image clipboard support; any rasterize failure lands
+      // here too. Hand over a download so the copy is never a dead end.
+      try {
+        const url = URL.createObjectURL(await png);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${metric.slug}-true-north-atlas.png`;
+        a.click();
+        URL.revokeObjectURL(url);
+        flash('Chart downloaded');
+      } catch { flash('Copy failed'); }
     }
   };
 
   const shareToX = () => {
     setShareOpen(false);
     // Post the share URL, not the image: /share/:slug carries the Open Graph
-    // tags, so X unfurls the same card copyCard() puts on the clipboard.
+    // tags, so X unfurls the server-rendered card for the metric.
     const text = `${metric.name} · True North Atlas`;
     const href = 'https://x.com/intent/tweet?text=' + encodeURIComponent(text)
       + '&url=' + encodeURIComponent(api.shareUrl(metric.slug));
@@ -237,6 +245,10 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   const hasChart = !err && (view === 'cycles'
     ? cycleRows.length > 0
     : metric.kind === 'urpd' ? !!urpd : rows.length > 0);
+  // Headline figure for the exported image, mirroring the .bigval on screen.
+  const headlineValue = scalar
+    ? fmt(unitOpts ? scaleVal(latestVal) : latestVal, metric.format, displayUnit)
+    : (metric.kind === 'urpd' && urpd?.avg != null ? fmt(urpd.avg, 'usd') : '');
   const waveKeys = metric.kind === 'stacked' && rows.length
     ? Object.keys(rows[rows.length - 1]).filter(k => k !== 'day') : [];
 
@@ -319,14 +331,15 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
           {shareOpen && (
             <div className="share-pop" role="menu">
               <button role="menuitem" onClick={copyLink}>Copy link</button>
-              <button role="menuitem" onClick={copyCard}>Copy chart image</button>
+              <button role="menuitem" onClick={copyChart} disabled={!hasChart}
+                title={hasChart ? undefined : 'No chart on screen yet'}>Copy chart image</button>
               <button role="menuitem" onClick={shareToX}>Share on X</button>
             </div>
           )}
         </div>
       </div>
 
-      <div className="chartbox">
+      <div className="chartbox" ref={chartBoxRef}>
         {hasChart && (
           <div className="chart-watermark" aria-hidden="true">
             TRUE NORTH <em>ATLAS</em>
