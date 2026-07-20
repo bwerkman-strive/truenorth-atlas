@@ -298,6 +298,7 @@ button { font-family: inherit; }
   background: transparent; border: 0; cursor: pointer; white-space: nowrap;
 }
 .share-pop button:hover { background: var(--ink-raise); color: var(--bone); }
+.share-pop button:disabled { color: var(--text-faint); cursor: default; background: transparent; }
 .share-pop button:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px; }
 .alert-form p { margin: 0 0 10px; }
 .alert-row { display: flex; gap: 8px; margin-bottom: 8px; }
