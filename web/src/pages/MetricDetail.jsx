@@ -51,7 +51,7 @@ function toneColor(t) {
 
 export default function MetricDetail({ metric, latestVal, onBack, categories, features }) {
   // Projection metrics open on full history: the schedule is the point.
-  const [range, setRange] = useState(metric.kind === 'stacked' || metric.projection ? 'all' : '4y');
+  const [range, setRange] = useState('all');
   const [logScale, setLogScale] = useState(!!metric.logDefault);
   const [showPrice, setShowPrice] = useState(false);
   const [view, setView] = useState('series'); // 'series' | 'cycles'
@@ -138,7 +138,12 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
       const row = { day: r.day };
       if (metric.projection) row.t = Date.parse(r.day);
       for (const c of data.columns) row[c] = r[c] === null ? null : Number(r[c]) * unitFactor;
-      if (r.price !== undefined) row.price = Number(r.price);
+      // The price overlay always draws on a log axis (price spans orders of
+      // magnitude even when the metric axis is linear), so non-positive prices
+      // must be dropped regardless of logScale — otherwise log(0) breaks the
+      // scale and the overlay silently fails to render. Pre-market days
+      // (2009-01-03..2010-07-16) are legitimately zero.
+      if (r.price !== undefined) { const p = Number(r.price); row.price = p > 0 ? p : null; }
       // Log scale can't render non-positive values.
       if (logScale) for (const k of Object.keys(row)) if (k !== 'day' && k !== 't' && row[k] !== null && row[k] <= 0) row[k] = null;
       return row;

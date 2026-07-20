@@ -135,15 +135,55 @@ export async function rollbackAbove(height) {
 
 // ---------------------------------------------------------------------------
 // Process one contiguous run of blocks (all same status re: batching) in a txn.
+//
+// Every write is batched to once per RUN rather than once per block. The old
+// per-block form cost ~22 round trips per block (four writes, plus a
+// read-modify-write pair for each of the five running counters), which makes
+// the worker latency-bound rather than throughput-bound: measured against a
+// remote database at 149 ms RTT that alone projected to ~22 days for a full
+// replay. Batched, a run costs 8 round trips regardless of how many blocks
+// it holds.
+//
+// Three orderings are load-bearing and deliberately preserved:
+//   1. Creations are inserted before spends are marked, so a UTXO created and
+//      spent inside the same run still resolves.
+//   2. Within the creation array, block order is preserved, so ON CONFLICT DO
+//      NOTHING keeps the first occurrence — the BIP30 duplicate-coinbase
+//      behavior of the per-block form.
+//   3. The counters are written before COMMIT, because snapshotAndRollupDay()
+//      runs immediately after the flush and reads chain_state as exact
+//      end-of-day state (see metricsDaily.js).
 export async function processBlocks(blocks) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
+    // Read the running counters once, accumulate in JS, write once at the end.
+    // chain_state.value is unconstrained NUMERIC, so a float64 survives the
+    // round trip exactly; accumulating in memory in the same order therefore
+    // yields bit-identical results to the old per-block read-modify-write.
+    const COUNTERS = ['realized_cap_usd', 'cum_cdd', 'cum_vdd_usd',
+                      'circulating_supply_sat', 'cum_miner_rev_usd'];
+    const state = Object.fromEntries(COUNTERS.map(k => [k, 0])); // missing key => 0, as getState()
+    const stateRows = await client.query(
+      'SELECT key, value FROM chain_state WHERE key = ANY($1::text[])', [COUNTERS]);
+    for (const r of stateRows.rows) state[r.key] = Number(r.value);
+
+    // Run-wide accumulators. created_height/created_time/created_price and
+    // spent_height were per-block scalar parameters in the old statements;
+    // batched across a run they become per-row columns.
+    const cTxid = [], cVout = [], cVal = [], cCb = [], cAddr = [],
+          cHeight = [], cTime = [], cPrice = [];
+    const sTxid = [], sVout = [], sSpender = [], sHeight = [];
+    const bHeight = [], bHash = [], bTime = [], bDay = [], bTxCount = [],
+          bSubsidy = [], bFees = [], bDiff = [], bSize = [], bWeight = [];
+    const aHeight = [], aDay = [], aRc = [], aSoprN = [], aSoprD = [], aAsoprN = [],
+          aAsoprD = [], aSthN = [], aSthD = [], aLthN = [], aLthD = [], aProfit = [],
+          aLoss = [], aCdd = [], aVdd = [], aVol = [], aMrev = [];
+
     for (const b of blocks) {
       const day = dayOf(b.time);
       const spot = await priceForDay(day);
-      const subsidy = blockSubsidySat(b.height);
 
       // Accumulators for block_agg
       const agg = {
@@ -152,9 +192,6 @@ export async function processBlocks(blocks) {
         cdd: 0, vdd: 0, volSat: 0,
       };
 
-      // Creation + spend batches for set operations
-      const cTxid = [], cVout = [], cVal = [], cCb = [], cAddr = [];
-      const sTxid = [], sVout = [], sSpender = [];
       let mintedSat = 0, feesSat = 0;
 
       for (const tx of b.tx) {
@@ -191,6 +228,7 @@ export async function processBlocks(blocks) {
             sTxid.push(Buffer.from(vin.txid, 'hex'));
             sVout.push(vin.vout);
             sSpender.push(Buffer.from(tx.txid, 'hex'));
+            sHeight.push(b.height);
           }
         }
 
@@ -204,6 +242,9 @@ export async function processBlocks(blocks) {
           cVal.push(vSat);
           cCb.push(isCoinbase);
           cAddr.push(vout.scriptPubKey?.address ?? null);
+          cHeight.push(b.height);
+          cTime.push(b.time);
+          cPrice.push(spot);
           agg.rcDelta += (vSat / SAT) * spot;
         }
 
@@ -211,50 +252,80 @@ export async function processBlocks(blocks) {
         else feesSat += Math.max(0, inSat - outSat);
       }
 
-      // Insert creations (ON CONFLICT covers the two historic BIP30 duplicate coinbases)
-      if (cTxid.length) {
-        await client.query(
-          `INSERT INTO utxos (txid, vout, value_sat, created_height, created_time, created_price, coinbase, address)
-           SELECT t, v, val, $6, to_timestamp($7), $8, cb, addr
-           FROM unnest($1::bytea[], $2::int[], $3::bigint[], $4::boolean[], $5::text[]) AS x(t, v, val, cb, addr)
-           ON CONFLICT (txid, vout) DO NOTHING`,
-          [cTxid, cVout, cVal, cCb, cAddr, b.height, b.time, spot]);
-      }
-      // Mark spends
-      if (sTxid.length) {
-        await client.query(
-          `UPDATE utxos u SET spent_height = $4, spent_txid = s.sp
-           FROM unnest($1::bytea[], $2::int[], $3::bytea[]) AS s(t, v, sp)
-           WHERE u.txid = s.t AND u.vout = s.v AND u.spent_height IS NULL`,
-          [sTxid, sVout, sSpender, b.height]);
-      }
-
-      await client.query(
-        `INSERT INTO blocks (height, hash, time, day, tx_count, subsidy_sat, fees_sat, difficulty, size_bytes, weight)
-         VALUES ($1,$2,to_timestamp($3),$4,$5,$6,$7,$8,$9,$10)`,
-        [b.height, b.hash, b.time, day, b.tx.length, mintedSat - feesSat, feesSat, b.difficulty ?? 0,
-         b.size ?? null, b.weight ?? null]);
+      bHeight.push(b.height); bHash.push(b.hash); bTime.push(b.time); bDay.push(day);
+      bTxCount.push(b.tx.length); bSubsidy.push(mintedSat - feesSat); bFees.push(feesSat);
+      bDiff.push(b.difficulty ?? 0); bSize.push(b.size ?? null); bWeight.push(b.weight ?? null);
 
       const minerRevUsd = (mintedSat / SAT) * spot;
+      aHeight.push(b.height); aDay.push(day); aRc.push(agg.rcDelta);
+      aSoprN.push(agg.soprN); aSoprD.push(agg.soprD);
+      aAsoprN.push(agg.asoprN); aAsoprD.push(agg.asoprD);
+      aSthN.push(agg.sthN); aSthD.push(agg.sthD);
+      aLthN.push(agg.lthN); aLthD.push(agg.lthD);
+      aProfit.push(agg.profit); aLoss.push(agg.loss);
+      aCdd.push(agg.cdd); aVdd.push(agg.vdd); aVol.push(agg.volSat); aMrev.push(minerRevUsd);
+
+      // Running tip-level counters, accumulated in the same per-block order the
+      // old code applied them in.
+      state.realized_cap_usd += agg.rcDelta;
+      state.cum_cdd += agg.cdd;
+      state.cum_vdd_usd += agg.vdd;
+      // Issuance = claimed subsidy only; fees in the coinbase are recycled coins.
+      state.circulating_supply_sat += (mintedSat - feesSat);
+      state.cum_miner_rev_usd += minerRevUsd;
+
+      heightMeta[b.height] = { t: b.time, d: day };
+    }
+
+    // ---- batched writes: creations before spends (see ordering note above) --
+    // ON CONFLICT covers the two historic BIP30 duplicate coinbases; array
+    // order is block order, so the first occurrence wins as it did per-block.
+    if (cTxid.length) {
+      await client.query(
+        `INSERT INTO utxos (txid, vout, value_sat, created_height, created_time, created_price, coinbase, address)
+         SELECT t, v, val, h, to_timestamp(ts), pr, cb, addr
+         FROM unnest($1::bytea[], $2::int[], $3::bigint[], $4::boolean[], $5::text[],
+                     $6::int[], $7::bigint[], $8::numeric[]) AS x(t, v, val, cb, addr, h, ts, pr)
+         ON CONFLICT (txid, vout) DO NOTHING`,
+        [cTxid, cVout, cVal, cCb, cAddr, cHeight, cTime, cPrice]);
+    }
+    if (sTxid.length) {
+      await client.query(
+        `UPDATE utxos u SET spent_height = s.h, spent_txid = s.sp
+         FROM unnest($1::bytea[], $2::int[], $3::bytea[], $4::int[]) AS s(t, v, sp, h)
+         WHERE u.txid = s.t AND u.vout = s.v AND u.spent_height IS NULL`,
+        [sTxid, sVout, sSpender, sHeight]);
+    }
+    if (bHeight.length) {
+      await client.query(
+        `INSERT INTO blocks (height, hash, time, day, tx_count, subsidy_sat, fees_sat, difficulty, size_bytes, weight)
+         SELECT h, hs, to_timestamp(t), d::date, tc, sub, f, diff, sz, w
+         FROM unnest($1::int[], $2::text[], $3::bigint[], $4::text[], $5::int[], $6::bigint[],
+                     $7::bigint[], $8::numeric[], $9::int[], $10::int[])
+              AS x(h, hs, t, d, tc, sub, f, diff, sz, w)`,
+        [bHeight, bHash, bTime, bDay, bTxCount, bSubsidy, bFees, bDiff, bSize, bWeight]);
+
       await client.query(
         `INSERT INTO block_agg (height, day, realized_cap_delta, sopr_num, sopr_den, asopr_num, asopr_den,
             sth_sopr_num, sth_sopr_den, lth_sopr_num, lth_sopr_den, realized_profit, realized_loss,
             cdd, vdd_usd, transfer_vol_sat, miner_rev_usd)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-        [b.height, day, agg.rcDelta, agg.soprN, agg.soprD, agg.asoprN, agg.asoprD,
-         agg.sthN, agg.sthD, agg.lthN, agg.lthD, agg.profit, agg.loss,
-         agg.cdd, agg.vdd, agg.volSat, minerRevUsd]);
-
-      // Running tip-level counters
-      await setState(client, 'realized_cap_usd', await getState(client, 'realized_cap_usd') + agg.rcDelta);
-      await setState(client, 'cum_cdd', await getState(client, 'cum_cdd') + agg.cdd);
-      await setState(client, 'cum_vdd_usd', await getState(client, 'cum_vdd_usd') + agg.vdd);
-      // Issuance = claimed subsidy only; fees in the coinbase are recycled coins.
-      await setState(client, 'circulating_supply_sat', await getState(client, 'circulating_supply_sat') + (mintedSat - feesSat));
-      await setState(client, 'cum_miner_rev_usd', await getState(client, 'cum_miner_rev_usd') + minerRevUsd);
-
-      heightMeta[b.height] = { t: b.time, d: day };
+         SELECT h, d::date, rc, sn, sd, an, ad, stn, std, ltn, ltd, pf, ls, cd, vd, vol, mrev
+         FROM unnest($1::int[], $2::text[], $3::numeric[], $4::numeric[], $5::numeric[],
+                     $6::numeric[], $7::numeric[], $8::numeric[], $9::numeric[], $10::numeric[],
+                     $11::numeric[], $12::numeric[], $13::numeric[], $14::numeric[],
+                     $15::numeric[], $16::bigint[], $17::numeric[])
+              AS x(h, d, rc, sn, sd, an, ad, stn, std, ltn, ltd, pf, ls, cd, vd, vol, mrev)`,
+        [aHeight, aDay, aRc, aSoprN, aSoprD, aAsoprN, aAsoprD, aSthN, aSthD,
+         aLthN, aLthD, aProfit, aLoss, aCdd, aVdd, aVol, aMrev]);
     }
+
+    // Counters last, but still inside the transaction: the day snapshot that
+    // follows this flush reads them as exact end-of-day state.
+    await client.query(
+      `INSERT INTO chain_state(key, value)
+       SELECT k, v FROM unnest($1::text[], $2::numeric[]) AS x(k, v)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [COUNTERS, COUNTERS.map(k => state[k])]);
 
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
