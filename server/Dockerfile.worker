@@ -6,14 +6,17 @@
 # run Tor, hence this image. See README "Connecting a Start9 node", pattern 2.
 FROM node:22-slim
 
-# fonts-ibm-plex is required by atlas-api, not the worker: og.js rasterizes the
-# share cards with sharp, which resolves font families through fontconfig. With
-# no fonts installed the SVG's font-family matched nothing and every glyph in
-# every social preview rendered as .notdef tofu. IBM Plex matches the site's
-# typography. It costs ~42MB, carried by the worker too since the image is
-# shared; split the images if that ever matters.
+# A font is required by atlas-api, not the worker: og.js rasterizes the share
+# cards with sharp, which resolves font families through fontconfig. With no
+# fonts installed at all, the SVG's font-family matched nothing and every glyph
+# in every social preview rendered as .notdef tofu.
+#
+# DejaVu rather than the site's IBM Plex: fonts-ibm-plex is not in bookworm main
+# (a build against it fails with "Unable to locate package"). og.js asks for
+# IBM Plex first and falls back to DejaVu, so dropping real Plex TTFs into
+# /usr/share/fonts later would upgrade the cards with no further change here.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends tor ca-certificates fonts-ibm-plex \
+  && apt-get install -y --no-install-recommends tor ca-certificates fonts-dejavu-core \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

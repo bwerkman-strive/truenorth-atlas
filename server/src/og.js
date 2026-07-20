@@ -124,12 +124,12 @@ export async function buildCardSvg(slug) {
   <rect width="${W}" height="${H}" fill="${INK}"/>
 
   ${epochRingsMark(96, 92, 96)}
-  <text x="168" y="78" font-family="'IBM Plex Sans', sans-serif" font-weight="700" font-size="30" fill="${TEXT}" letter-spacing="3">TRUE NORTH <tspan fill="${BTC}">ATLAS</tspan></text>
-  <text x="168" y="112" font-family="'IBM Plex Sans', sans-serif" font-size="19" fill="${SLATE}" letter-spacing="3">NAVIGATING THE BITCOIN LEDGER</text>
+  <text x="168" y="78" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-weight="700" font-size="30" fill="${TEXT}" letter-spacing="3">TRUE NORTH <tspan fill="${BTC}">ATLAS</tspan></text>
+  <text x="168" y="112" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-size="19" fill="${SLATE}" letter-spacing="3">NAVIGATING THE BITCOIN LEDGER</text>
 
-  <text x="80" y="188" font-family="'IBM Plex Sans', sans-serif" font-weight="700" font-size="46" fill="${TEXT}">${esc(m.name)}</text>
-  <text x="1120" y="150" text-anchor="end" font-family="'IBM Plex Sans', sans-serif" font-weight="700" font-size="58" fill="${TEXT}">${esc(valueStr)}</text>
-  <text x="1120" y="186" text-anchor="end" font-family="'IBM Plex Sans', sans-serif" font-size="21" fill="${SLATE}">${esc(pctStr)}</text>
+  <text x="80" y="188" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-weight="700" font-size="46" fill="${TEXT}">${esc(m.name)}</text>
+  <text x="1120" y="150" text-anchor="end" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-weight="700" font-size="58" fill="${TEXT}">${esc(valueStr)}</text>
+  <text x="1120" y="186" text-anchor="end" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-size="21" fill="${SLATE}">${esc(pctStr)}</text>
 
   <g stroke="${LINE}" stroke-width="1" opacity="0.7">
     <line x1="80" y1="320" x2="1120" y2="320"/><line x1="80" y1="390" x2="1120" y2="390"/>
@@ -137,11 +137,11 @@ export async function buildCardSvg(slug) {
   </g>
   ${area ? `<path d="${area}" fill="url(#fade)"/>` : ''}
   ${path ? `<path d="${path}" stroke="${AURORA}" stroke-width="4" fill="none" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
-  ${!path ? `<text x="600" y="400" text-anchor="middle" font-family="'IBM Plex Sans', sans-serif" font-size="26" fill="${SLATE}">Syncing history from a fully-validating node…</text>` : ''}
+  ${!path ? `<text x="600" y="400" text-anchor="middle" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-size="26" fill="${SLATE}">Syncing history from a fully-validating node…</text>` : ''}
 
   <line x1="80" y1="560" x2="1120" y2="560" stroke="${LINE}" stroke-width="2"/>
-  <text x="80" y="596" font-family="'IBM Plex Sans', sans-serif" font-size="20" fill="${SLATE}">${esc(latest.d ? `As of ${usDay(latest.d)} UTC · computed from a fully-validating Bitcoin node` : 'Computed from a fully-validating Bitcoin node')}</text>
-  <text x="1120" y="596" text-anchor="end" font-family="'IBM Plex Sans', sans-serif" font-weight="600" font-size="20" fill="${SLATE}">${esc(config.publicSiteUrl.replace(/^https?:\/\//, ''))}</text>
+  <text x="80" y="596" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-size="20" fill="${SLATE}">${esc(latest.d ? `As of ${usDay(latest.d)} UTC · computed from a fully-validating Bitcoin node` : 'Computed from a fully-validating Bitcoin node')}</text>
+  <text x="1120" y="596" text-anchor="end" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-weight="600" font-size="20" fill="${SLATE}">${esc(config.publicSiteUrl.replace(/^https?:\/\//, ''))}</text>
 </svg>`;
 }
 
