@@ -81,7 +81,9 @@ test('share page carries OG/Twitter tags and redirects humans to the app', async
   const { status, body } = await j('/share/mvrv');
   assert.equal(status, 200);
   assert.match(body, /og:image" content="[^"]+\/og\/mvrv\.png"/);
-  assert.match(body, /og:title" content="MVRV Ratio — True North Atlas"/);
+  // Middot, not an em-dash: user-facing copy avoids em-dashes, and this string
+  // is the social preview title (matches "The Signal · True North Atlas").
+  assert.match(body, /og:title" content="MVRV Ratio · True North Atlas"/);
   assert.match(body, /twitter:card" content="summary_large_image"/);
   assert.match(body, new RegExp('https://atlas\\.example\\.com/#/m/mvrv'));
   assert.equal((await fetch(base + '/share/nope')).status, 404);

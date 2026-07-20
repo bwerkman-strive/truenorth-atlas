@@ -279,6 +279,23 @@ button { font-family: inherit; }
 
 /* ---------- alerts + cycles + share ---------- */
 .share-grp { margin-left: auto; }
+
+/* Share menu: the trigger keeps the toolbar's pill shape; the popover hangs
+   off its right edge so it never pushes the toolbar wider. */
+.share-menu { position: relative; overflow: visible; }
+.share-pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 20;
+  display: flex; flex-direction: column; min-width: 172px;
+  background: var(--ink-panel); border: 1px solid var(--ink-line);
+  border-radius: 8px; padding: 4px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+.share-pop button {
+  text-align: left; width: 100%; padding: 8px 10px; border-radius: 6px;
+  color: var(--text-dim); font-family: var(--font-data); font-size: 12.5px;
+  background: transparent; border: 0; cursor: pointer; white-space: nowrap;
+}
+.share-pop button:hover { background: var(--ink-raise); color: var(--bone); }
+.share-pop button:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px; }
 .alert-form p { margin: 0 0 10px; }
 .alert-row { display: flex; gap: 8px; margin-bottom: 8px; }
 .alert-row select, .alert-row input {
@@ -310,7 +327,6 @@ button { font-family: inherit; }
   color: var(--text); opacity: 0.3;
 }
 .chart-watermark em { font-style: normal; color: var(--orange); }
-.chart-watermark span { font-family: var(--font-data); font-weight: 400; color: var(--text-dim); letter-spacing: 0; }
 
 .foot-subscribe { padding: 26px 0 22px; border-bottom: 1px solid var(--ink-line); margin-bottom: 20px; }
 .foot-subscribe h3 { font-family: var(--font-display); font-size: 22px; font-weight: 400; margin: 0 0 6px; color: var(--text); }
@@ -380,7 +396,6 @@ button { font-family: inherit; }
   .nl-chart-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   .foot-subscribe .sub-form { max-width: none; }
   .chart-watermark { font-size: 10.5px; }
-  .chart-watermark span { display: none; } /* keep the lockup, drop the URL */
 }
 
 /* --- Compact phones --- */
