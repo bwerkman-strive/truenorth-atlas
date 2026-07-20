@@ -1,5 +1,6 @@
 /* True North Atlas — design tokens
-   Aligned to the Strive brand system (treasury.strive.com style reference):
+   Aligned to the Strive brand system (treasury.strive.com style reference,
+   rev 2026-07-20; see .claude/skills/strive-brand):
    ink surfaces, bone text, slate secondary tier, hairlines over shadows, and
    one reserved accent — Bitcoin orange — kept scarce (price, italic editorial
    emphasis, section eyebrows, focus). Green/blue/red remain chart-data colors
@@ -15,7 +16,7 @@
   --bone: #f2ede3;
   --bone-2: #e8e2d4;
   --text: var(--bone);
-  --text-dim: #918b7d;   /* slate: secondary text */
+  --text-dim: #a39d8f;   /* slate: secondary text; retuned 2026-07 (was #918b7d) -> 7.25:1 on --ink */
   --text-faint: #807a6a; /* slate-tertiary: quiet de-emphasis */
   /* The reserved accent — Bitcoin orange (also the price color) */
   --orange: #f7931a;
