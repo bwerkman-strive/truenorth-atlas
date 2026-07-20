@@ -37,6 +37,9 @@ export const api = {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
   }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error ?? `API ${r.status}`); return j; }),
   shareUrl: (slug) => (BASE || window.location.origin) + '/share/' + slug,
+  // The 1200x630 branded card behind /share/:slug. Rendered server-side with
+  // the real fonts, so it is what the Share menu copies and what X unfurls.
+  cardUrl: (slug) => (BASE || window.location.origin) + '/og/' + slug + '.png',
   admin: {
     whoami: (token) => authed('GET', '/api/admin/whoami', token),
     listKeys: (token) => authed('GET', '/api/admin/keys', token),

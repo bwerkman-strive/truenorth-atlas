@@ -59,7 +59,8 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   const [cycles, setCycles] = useState(null);
   const [urpd, setUrpd] = useState(null);
   const [err, setErr] = useState(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState('');   // transient confirmation label
+  const [shareOpen, setShareOpen] = useState(false);
   const [unitIdx, setUnitIdx] = useState(0);
   const [showProj, setShowProj] = useState(true);
   // Scalar metrics get the full toolbar; 'stacked' and 'urpd' kinds render
@@ -116,11 +117,57 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
     return rows;
   }, [cycles, logScale, unitFactor]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const share = async () => {
+  // Dismiss the share menu on an outside click or Escape.
+  useEffect(() => {
+    if (!shareOpen) return;
+    const close = (e) => { if (!e.target.closest?.('.share-menu')) setShareOpen(false); };
+    const esc = (e) => { if (e.key === 'Escape') setShareOpen(false); };
+    document.addEventListener('click', close);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('click', close); document.removeEventListener('keydown', esc); };
+  }, [shareOpen]);
+
+  // Share menu. `copied` doubles as the transient confirmation label for every
+  // action, so only one timer and one piece of state are in play.
+  const flash = (msg) => { setCopied(msg); setTimeout(() => setCopied(''), 2200); };
+
+  const copyLink = async () => {
+    setShareOpen(false);
     try {
       await navigator.clipboard.writeText(api.shareUrl(metric.slug));
-      setCopied(true); setTimeout(() => setCopied(false), 2200);
+      flash('Link copied');
     } catch { window.prompt('Copy this share link:', api.shareUrl(metric.slug)); }
+  };
+
+  const copyCard = async () => {
+    setShareOpen(false);
+    const url = api.cardUrl(metric.slug);
+    try {
+      // Safari only accepts a Promise here and requires the write to happen in
+      // the same task as the click, so the fetch must be passed unresolved
+      // rather than awaited first.
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': fetch(url).then(r => {
+          if (!r.ok) throw new Error(`card ${r.status}`);
+          return r.blob();
+        }) }),
+      ]);
+      flash('Chart copied');
+    } catch {
+      // Firefox lacks image clipboard support, and any fetch failure lands here
+      // too: open the card so it can be saved or copied by hand.
+      window.open(url, '_blank', 'noopener');
+    }
+  };
+
+  const shareToX = () => {
+    setShareOpen(false);
+    // Post the share URL, not the image: /share/:slug carries the Open Graph
+    // tags, so X unfurls the same card copyCard() puts on the clipboard.
+    const text = `${metric.name} · True North Atlas`;
+    const href = 'https://x.com/intent/tweet?text=' + encodeURIComponent(text)
+      + '&url=' + encodeURIComponent(api.shareUrl(metric.slug));
+    window.open(href, '_blank', 'noopener,width=600,height=500');
   };
 
   const rows = useMemo(() => {
@@ -264,15 +311,25 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             </button>
           </div>
         )}
-        <div className="grp share-grp">
-          <button onClick={share}>{copied ? '✓ Link copied' : 'Share'}</button>
+        <div className="grp share-grp share-menu">
+          <button aria-haspopup="menu" aria-expanded={shareOpen}
+            onClick={() => setShareOpen(o => !o)}>
+            {copied ? `✓ ${copied}` : 'Share ▾'}
+          </button>
+          {shareOpen && (
+            <div className="share-pop" role="menu">
+              <button role="menuitem" onClick={copyLink}>Copy link</button>
+              <button role="menuitem" onClick={copyCard}>Copy chart image</button>
+              <button role="menuitem" onClick={shareToX}>Share on X</button>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="chartbox">
         {hasChart && (
           <div className="chart-watermark" aria-hidden="true">
-            TRUE NORTH <em>ATLAS</em><span> · tnorth.com</span>
+            TRUE NORTH <em>ATLAS</em>
           </div>
         )}
         {err && <div className="err">Could not load series: {err}</div>}

@@ -171,7 +171,7 @@ export function ogRouter() {
     const apiOrigin = config.publicApiUrl || `${req.protocol}://${req.get('host')}`;
     const img = `${apiOrigin}/og/${m.slug}.png`;
     const dest = `${config.publicSiteUrl}/#/m/${m.slug}`;
-    const title = `${m.name} — True North Atlas`;
+    const title = `${m.name} · True North Atlas`;
     const desc = m.short ?? 'Bitcoin on-chain analytics from a fully-validating node.';
     res.set('Cache-Control', 'public, max-age=3600').send(`<!doctype html>
 <html><head><meta charset="utf-8">
