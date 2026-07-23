@@ -48,11 +48,18 @@ ALTER TABLE blocks ADD COLUMN IF NOT EXISTS size_bytes INTEGER;
 ALTER TABLE blocks ADD COLUMN IF NOT EXISTS weight INTEGER;
 ALTER TABLE utxos ADD COLUMN IF NOT EXISTS spent_txid BYTEA;
 -- Partial index over the live UTXO set: powers supply-in-profit, HODL waves, cohorts.
-CREATE INDEX IF NOT EXISTS utxos_unspent_price_idx
-  ON utxos (created_price) INCLUDE (value_sat, created_time) WHERE spent_height IS NULL;
-CREATE INDEX IF NOT EXISTS utxos_unspent_time_idx
-  ON utxos (created_time) INCLUDE (value_sat, created_price) WHERE spent_height IS NULL;
-CREATE INDEX IF NOT EXISTS utxos_created_height_idx ON utxos (created_height);
+-- TEMPORARILY DISABLED while the 2026-07 full-chain replay runs. These three
+-- indexes are read only by the once-per-day snapshot but evict the hot
+-- utxos_pkey from shared_buffers, slowing ingestion ~6x, and because
+-- migrate() re-runs this file on every api/worker start, leaving them here
+-- resurrects them (with a table-locking plain CREATE INDEX) on every deploy.
+-- When the replay reaches tip: build them by hand with CREATE INDEX
+-- CONCURRENTLY (same definitions), then uncomment these statements.
+-- CREATE INDEX IF NOT EXISTS utxos_unspent_price_idx
+--   ON utxos (created_price) INCLUDE (value_sat, created_time) WHERE spent_height IS NULL;
+-- CREATE INDEX IF NOT EXISTS utxos_unspent_time_idx
+--   ON utxos (created_time) INCLUDE (value_sat, created_price) WHERE spent_height IS NULL;
+-- CREATE INDEX IF NOT EXISTS utxos_created_height_idx ON utxos (created_height);
 CREATE INDEX IF NOT EXISTS utxos_spent_height_idx   ON utxos (spent_height) WHERE spent_height IS NOT NULL;
 
 -- Per-block spend/creation aggregates (all deltas, so a reorg rollback is
