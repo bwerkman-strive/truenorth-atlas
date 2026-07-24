@@ -126,8 +126,16 @@ export async function priceForDay(day) {
   if (priceCache.has(day)) return priceCache.get(day);
   const r = await pool.query('SELECT close_usd FROM prices WHERE day=$1', [day]);
   if (!r.rows.length) {
-    // Tip block on a brand-new UTC day before the daily candle exists: use last close.
-    const p = await pool.query('SELECT close_usd FROM prices ORDER BY day DESC LIMIT 1');
+    // Tip block on a brand-new UTC day before the daily candle exists: use the
+    // latest close ON OR BEFORE the requested day. At the tip that is
+    // yesterday's close, same as before — but for a mid-history hole it is the
+    // previous day's close instead of the newest close in the table. The old
+    // unbounded form valued all of 2015-08-26 at a 2026 price during the July
+    // 2026 replay (the prices table had exactly one missing day) and poisoned
+    // every downstream cost basis; see assertNoPriceGaps, which now makes a
+    // hole fail loudly instead.
+    const p = await pool.query(
+      'SELECT close_usd FROM prices WHERE day <= $1 ORDER BY day DESC LIMIT 1', [day]);
     const v = p.rows.length ? Number(p.rows[0].close_usd) : 0;
     priceCache.set(day, v);
     return v;
@@ -137,6 +145,24 @@ export async function priceForDay(day) {
   return v;
 }
 export function bustPriceCache() { priceCache.clear(); }
+
+// A hole in the daily series silently corrupts cost bases (every metric keys
+// UTXOs to their creation-day close), so the worker refuses to sync while one
+// exists. Providers have skipped days before (2015-08-26); this turns that
+// class of failure from silent poison into a loud boot error.
+export async function assertNoPriceGaps() {
+  const r = await pool.query(`
+    SELECT d::date::text AS day
+    FROM generate_series((SELECT MIN(day) FROM prices), (SELECT MAX(day) FROM prices), '1 day') d
+    EXCEPT SELECT day::text FROM prices
+    ORDER BY 1 LIMIT 10`);
+  if (r.rows.length) {
+    throw new Error(
+      `prices table has ${r.rows.length}${r.rows.length === 10 ? '+' : ''} missing day(s): ` +
+      r.rows.map(x => x.day).join(', ') +
+      ' — fill them (INSERT INTO prices) before syncing');
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Live spot price (Massive last trade), cached briefly in memory. Display-only:

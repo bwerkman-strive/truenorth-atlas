@@ -14,8 +14,8 @@
 import pino from 'pino';
 import { pool, migrate, getState, setState } from './db.js';
 import { rpc, fetchBlocks, blockSubsidySat } from './rpc.js';
-import { syncPrices, priceForDay, bustPriceCache } from './prices.js';
-import { snapshotAndRollupDay, resetRollupFrom } from './metricsDaily.js';
+import { syncPrices, priceForDay, bustPriceCache, assertNoPriceGaps } from './prices.js';
+import { snapshotAndRollupDay, resetRollupFrom, ageBandOf, feerateBucketOf } from './metricsDaily.js';
 import { config } from './config.js';
 
 const log = pino({ level: process.env.LOG_LEVEL || 'info' });
@@ -120,6 +120,9 @@ export async function rollbackAbove(height) {
     await client.query('DELETE FROM utxos WHERE created_height > $1', [height]);
     await client.query('UPDATE utxos SET spent_height = NULL, spent_txid = NULL WHERE spent_height > $1', [height]);
     await client.query('DELETE FROM blocks WHERE height > $1', [height]); // cascades block_agg
+    // Active-address staging: a pair first seen only in rolled-back blocks
+    // must vanish; one first seen at or below the fork stays (still active).
+    await client.query('DELETE FROM day_active_addresses WHERE first_height > $1', [height]);
     await setState(client, 'realized_cap_usd', await getState(client, 'realized_cap_usd') - Number(sums.rows[0].rc));
     await setState(client, 'cum_cdd', await getState(client, 'cum_cdd') - Number(sums.rows[0].cdd));
     await setState(client, 'cum_vdd_usd', await getState(client, 'cum_vdd_usd') - Number(sums.rows[0].vdd));
@@ -179,7 +182,20 @@ export async function processBlocks(blocks) {
           bSubsidy = [], bFees = [], bDiff = [], bSize = [], bWeight = [];
     const aHeight = [], aDay = [], aRc = [], aSoprN = [], aSoprD = [], aAsoprN = [],
           aAsoprD = [], aSthN = [], aSthD = [], aLthN = [], aLthD = [], aProfit = [],
-          aLoss = [], aCdd = [], aVdd = [], aVol = [], aMrev = [];
+          aLoss = [], aCdd = [], aVdd = [], aVol = [], aMrev = [],
+          aOprFees = [], aOprCount = [], aOprBytes = [], aMinerOut = [],
+          aSpentBands = [], aFeeHist = [];
+
+    // Active addresses: first sighting of each (day, address) in this run.
+    // Batched into day_active_addresses with ON CONFLICT DO NOTHING, so the
+    // earliest height for a pair always wins across runs — which is what makes
+    // the rollbackAbove() reversal (DELETE WHERE first_height > H) exact.
+    const runAddrs = new Map(); // "day\0address" -> {day, addr, height}
+    const seeAddr = (day, addr, height) => {
+      if (!addr) return;
+      const k = day + '\0' + addr;
+      if (!runAddrs.has(k)) runAddrs.set(k, { day, addr, height });
+    };
 
     for (const b of blocks) {
       const day = dayOf(b.time);
@@ -190,6 +206,8 @@ export async function processBlocks(blocks) {
         rcDelta: 0, soprN: 0, soprD: 0, asoprN: 0, asoprD: 0,
         sthN: 0, sthD: 0, lthN: 0, lthD: 0, profit: 0, loss: 0,
         cdd: 0, vdd: 0, volSat: 0,
+        oprFees: 0, oprCount: 0, oprBytes: 0, minerOutSat: 0,
+        spentBands: {}, feeHist: {},
       };
 
       let mintedSat = 0, feesSat = 0;
@@ -197,6 +215,7 @@ export async function processBlocks(blocks) {
       for (const tx of b.tx) {
         const isCoinbase = tx.vin.length > 0 && tx.vin[0].coinbase !== undefined;
         let inSat = 0, outSat = 0;
+        let hasOpReturn = false, txOprBytes = 0, txOprCount = 0;
 
         if (!isCoinbase) {
           for (const vin of tx.vin) {
@@ -216,6 +235,9 @@ export async function processBlocks(blocks) {
             agg.cdd += vBtc * ageDays;
             agg.vdd += vBtc * ageDays * spot;
             agg.rcDelta -= vBtc * cPrice;
+            const band = ageBandOf(ageDays);
+            agg.spentBands[band] = (agg.spentBands[band] ?? 0) + vBtc;
+            if (p.generated) agg.minerOutSat += vSat; // spend of a coinbase output
 
             if (cPrice > 0) {
               agg.soprN += vBtc * spot; agg.soprD += vBtc * cPrice;
@@ -229,13 +251,23 @@ export async function processBlocks(blocks) {
             sVout.push(vin.vout);
             sSpender.push(Buffer.from(tx.txid, 'hex'));
             sHeight.push(b.height);
+            seeAddr(day, p.scriptPubKey?.address, b.height); // sender
           }
         }
 
         for (const vout of tx.vout) {
-          if (vout.scriptPubKey?.type === 'nulldata') continue; // provably unspendable
           if (b.height === 0) continue; // genesis output is not spendable / not in the UTXO set
           const vSat = Math.round(vout.value * SAT);
+          // OP_RETURN outputs are provably unspendable: no UTXO row, but their
+          // value DOES count toward outputs (a nonzero-value OP_RETURN burns
+          // coins, it does not tip the miner), and their payload is tallied.
+          if (vout.scriptPubKey?.type === 'nulldata') {
+            outSat += vSat;
+            hasOpReturn = true;
+            txOprCount += 1;
+            txOprBytes += (vout.scriptPubKey?.hex?.length ?? 0) / 2;
+            continue;
+          }
           outSat += vSat;
           cTxid.push(Buffer.from(tx.txid, 'hex'));
           cVout.push(vout.n);
@@ -246,10 +278,25 @@ export async function processBlocks(blocks) {
           cTime.push(b.time);
           cPrice.push(spot);
           agg.rcDelta += (vSat / SAT) * spot;
+          seeAddr(day, vout.scriptPubKey?.address, b.height); // receiver
         }
 
-        if (isCoinbase) mintedSat += outSat;
-        else feesSat += Math.max(0, inSat - outSat);
+        if (isCoinbase) {
+          mintedSat += outSat;
+        } else {
+          const fee = Math.max(0, inSat - outSat);
+          feesSat += fee;
+          if (hasOpReturn) {
+            agg.oprFees += fee; // whole-tx fee attribution, the standard convention
+            agg.oprCount += txOprCount;
+            agg.oprBytes += txOprBytes;
+          }
+          const vsize = tx.vsize ?? (tx.weight ? tx.weight / 4 : null);
+          if (vsize > 0) {
+            const bucket = feerateBucketOf(fee / vsize);
+            agg.feeHist[bucket] = (agg.feeHist[bucket] ?? 0) + 1;
+          }
+        }
       }
 
       bHeight.push(b.height); bHash.push(b.hash); bTime.push(b.time); bDay.push(day);
@@ -264,6 +311,10 @@ export async function processBlocks(blocks) {
       aLthN.push(agg.lthN); aLthD.push(agg.lthD);
       aProfit.push(agg.profit); aLoss.push(agg.loss);
       aCdd.push(agg.cdd); aVdd.push(agg.vdd); aVol.push(agg.volSat); aMrev.push(minerRevUsd);
+      aOprFees.push(agg.oprFees); aOprCount.push(agg.oprCount); aOprBytes.push(agg.oprBytes);
+      aMinerOut.push(agg.minerOutSat);
+      aSpentBands.push(Object.keys(agg.spentBands).length ? JSON.stringify(agg.spentBands) : null);
+      aFeeHist.push(Object.keys(agg.feeHist).length ? JSON.stringify(agg.feeHist) : null);
 
       // Running tip-level counters, accumulated in the same per-block order the
       // old code applied them in.
@@ -308,15 +359,36 @@ export async function processBlocks(blocks) {
       await client.query(
         `INSERT INTO block_agg (height, day, realized_cap_delta, sopr_num, sopr_den, asopr_num, asopr_den,
             sth_sopr_num, sth_sopr_den, lth_sopr_num, lth_sopr_den, realized_profit, realized_loss,
-            cdd, vdd_usd, transfer_vol_sat, miner_rev_usd)
-         SELECT h, d::date, rc, sn, sd, an, ad, stn, std, ltn, ltd, pf, ls, cd, vd, vol, mrev
+            cdd, vdd_usd, transfer_vol_sat, miner_rev_usd,
+            op_return_fees_sat, op_return_count, op_return_bytes, miner_outflow_sat,
+            spent_age_bands, feerate_hist)
+         SELECT h, d::date, rc, sn, sd, an, ad, stn, std, ltn, ltd, pf, ls, cd, vd, vol, mrev,
+                oprf, oprc, oprb, mout, bands, hist
          FROM unnest($1::int[], $2::text[], $3::numeric[], $4::numeric[], $5::numeric[],
                      $6::numeric[], $7::numeric[], $8::numeric[], $9::numeric[], $10::numeric[],
                      $11::numeric[], $12::numeric[], $13::numeric[], $14::numeric[],
-                     $15::numeric[], $16::bigint[], $17::numeric[])
-              AS x(h, d, rc, sn, sd, an, ad, stn, std, ltn, ltd, pf, ls, cd, vd, vol, mrev)`,
+                     $15::numeric[], $16::bigint[], $17::numeric[],
+                     $18::bigint[], $19::int[], $20::bigint[], $21::bigint[],
+                     $22::jsonb[], $23::jsonb[])
+              AS x(h, d, rc, sn, sd, an, ad, stn, std, ltn, ltd, pf, ls, cd, vd, vol, mrev,
+                   oprf, oprc, oprb, mout, bands, hist)`,
         [aHeight, aDay, aRc, aSoprN, aSoprD, aAsoprN, aAsoprD, aSthN, aSthD,
-         aLthN, aLthD, aProfit, aLoss, aCdd, aVdd, aVol, aMrev]);
+         aLthN, aLthD, aProfit, aLoss, aCdd, aVdd, aVol, aMrev,
+         aOprFees, aOprCount, aOprBytes, aMinerOut, aSpentBands, aFeeHist]);
+    }
+
+    // Active-address sightings for this run (senders + receivers). ON CONFLICT
+    // keeps the earliest first_height per (day, address) across runs.
+    if (runAddrs.size) {
+      const dDay = [], dAddr = [], dHeight = [];
+      for (const { day, addr, height } of runAddrs.values()) {
+        dDay.push(day); dAddr.push(addr); dHeight.push(height);
+      }
+      await client.query(
+        `INSERT INTO day_active_addresses (day, address, first_height)
+         SELECT d::date, a, h FROM unnest($1::text[], $2::text[], $3::int[]) AS x(d, a, h)
+         ON CONFLICT (day, address) DO NOTHING`,
+        [dDay, dAddr, dHeight]);
     }
 
     // Counters last, but still inside the transaction: the day snapshot that
@@ -400,6 +472,7 @@ export async function main() {
   log.info('schema ready');
   if (process.env.SKIP_PRICE_SYNC !== '1') {
     await syncPrices(log);
+    await assertNoPriceGaps(); // a hole poisons cost bases; refuse to start over one
     log.info('price history ready');
   }
   await loadHeightMeta();
@@ -425,7 +498,8 @@ export async function main() {
       // Refresh prices every 6h so new UTC days have candles.
       if (Date.now() - lastPriceSync > 6 * 3600e3) {
         await phase('syncPrices', {}, async () => {
-          await syncPrices(log); bustPriceCache(); lastPriceSync = Date.now();
+          await syncPrices(log); await assertNoPriceGaps();
+          bustPriceCache(); lastPriceSync = Date.now();
         });
       }
 

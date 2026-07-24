@@ -7,10 +7,45 @@ import { config } from './config.js';
 // Fine-grained age buckets (days). 155 is inserted so STH/LTH cohorts can be
 // derived from the same single scan as HODL waves.
 const EDGES = [1, 7, 30, 90, 155, 180, 365, 730, 1095, 1825, 2555, 3650];
-const WAVE_LABELS = ['24h', '1d–1w', '1w–1m', '1m–3m', '3m–6m', '6m–1y',
+export const WAVE_LABELS = ['24h', '1d–1w', '1w–1m', '1m–3m', '3m–6m', '6m–1y',
   '1y–2y', '2y–3y', '3y–5y', '5y–7y', '7y–10y', '10y+'];
 // bucket index -> wave label index (buckets 4 and 5 merge into '3m–6m')
 const WAVE_OF = [0, 1, 2, 3, 4, 4, 5, 6, 7, 8, 9, 10, 11];
+
+// Age band for a spent output, using the SAME labels as HODL waves so the
+// spend-side (spent_age_bands) and hold-side views line up 1:1 in the UI.
+// sync.js calls this in the hot loop; keep it allocation-free.
+export function ageBandOf(ageDays) {
+  for (let i = 0; i < EDGES.length; i++) {
+    if (ageDays < EDGES[i]) return WAVE_LABELS[WAVE_OF[i]];
+  }
+  return WAVE_LABELS[WAVE_OF[EDGES.length]];
+}
+
+// Fee-rate histogram buckets (sat/vB), shared by sync.js (per-block counts)
+// and the daily rollup (median extraction). Bucket i holds rates in
+// [FEERATE_EDGES[i-1], FEERATE_EDGES[i]); bucket 0 is < 1 sat/vB and the last
+// bucket is open-ended. The median is therefore bucket-resolution, which the
+// catalog copy states plainly.
+export const FEERATE_EDGES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40,
+  50, 75, 100, 150, 200, 300, 500, 1000];
+export function feerateBucketOf(rate) {
+  let i = 0;
+  while (i < FEERATE_EDGES.length && rate >= FEERATE_EDGES[i]) i++;
+  return i;
+}
+export function feerateBucketValue(idx) {
+  if (idx <= 0) return 0.5;
+  if (idx >= FEERATE_EDGES.length) return FEERATE_EDGES[FEERATE_EDGES.length - 1] * 1.5;
+  return (FEERATE_EDGES[idx - 1] + FEERATE_EDGES[idx]) / 2;
+}
+
+// Spend-age bands counted as "revived" old supply.
+const REVIVED_BANDS = new Set(['1y–2y', '2y–3y', '3y–5y', '5y–7y', '7y–10y', '10y+']);
+
+// Address-balance cohort thresholds (BTC) and their band labels.
+const BAL_THRESHOLDS = [0.01, 0.1, 1, 10, 100, 1000, 10000];
+const BAL_LABELS = ['<0.01', '0.01–0.1', '0.1–1', '1–10', '10–100', '100–1k', '1k–10k', '10k+'];
 
 export async function snapshotAndRollupDay(day, log) {
   const last = await pool.query(`SELECT value FROM chain_state WHERE key='last_metrics_day_epoch'`);
@@ -19,7 +54,13 @@ export async function snapshotAndRollupDay(day, log) {
   if (dayEpoch <= lastEpoch) return; // already finalized (idempotency guard)
 
   const priceR = await pool.query('SELECT close_usd FROM prices WHERE day=$1', [day]);
-  const price = priceR.rows.length ? Number(priceR.rows[0].close_usd) : 0;
+  // Pre-market days exist as explicit 0 rows, so a missing row is always a
+  // provider gap. Finalizing a day against price 0 (or any wrong price) writes
+  // permanently bad metrics; fail loudly instead. See prices.assertNoPriceGaps.
+  if (!priceR.rows.length) {
+    throw new Error(`no daily close for ${day}: prices table has a gap; refusing to finalize`);
+  }
+  const price = Number(priceR.rows[0].close_usd);
   const dayEnd = new Date((dayEpoch + 1) * 86400e3).toISOString();
 
   // ---- Set-level snapshot: one scan of the live UTXO set -------------------
@@ -27,23 +68,29 @@ export async function snapshotAndRollupDay(day, log) {
     `WHEN age_d < ${e} THEN ${i}`).join(' ') + ` ELSE ${EDGES.length}`;
   const snap = await pool.query(`
     WITH u AS (
-      SELECT value_sat, created_price,
+      SELECT value_sat, created_price, coinbase,
              EXTRACT(EPOCH FROM ($1::timestamptz - created_time)) / 86400.0 AS age_d
       FROM utxos WHERE spent_height IS NULL
     )
     SELECT (CASE ${caseExpr} END)::int AS b,
            SUM(value_sat)::numeric / 1e8 AS v_btc,
            SUM(value_sat::numeric / 1e8 * created_price) AS rc_usd,
-           COALESCE(SUM(value_sat) FILTER (WHERE created_price < $2), 0)::numeric / 1e8 AS v_profit
+           COALESCE(SUM(value_sat) FILTER (WHERE created_price < $2), 0)::numeric / 1e8 AS v_profit,
+           COALESCE(SUM(value_sat::numeric / 1e8 * ($2 - created_price)) FILTER (WHERE created_price < $2), 0) AS u_profit,
+           COALESCE(SUM(value_sat::numeric / 1e8 * (created_price - $2)) FILTER (WHERE created_price > $2), 0) AS u_loss,
+           COALESCE(SUM(value_sat) FILTER (WHERE coinbase), 0)::numeric / 1e8 AS cb_btc
     FROM u GROUP BY 1`, [dayEnd, price]);
 
   let setSupply = 0, setRc = 0, profitBtc = 0;
+  let unrealProfit = 0, unrealLoss = 0, minerUnmoved = 0;
   let sthV = 0, sthRc = 0, lthV = 0, lthRc = 0, sthProfit = 0, lthProfit = 0;
   const waves = Object.fromEntries(WAVE_LABELS.map(l => [l, 0]));
   const rcWaves = Object.fromEntries(WAVE_LABELS.map(l => [l, 0]));
   for (const r of snap.rows) {
     const b = Number(r.b), v = Number(r.v_btc), rc = Number(r.rc_usd);
     setSupply += v; setRc += rc; profitBtc += Number(r.v_profit);
+    unrealProfit += Number(r.u_profit); unrealLoss += Number(r.u_loss);
+    minerUnmoved += Number(r.cb_btc);
     if (EDGES[b] !== undefined && EDGES[b] <= config.sthDays) { sthV += v; sthRc += rc; sthProfit += Number(r.v_profit); }
     else { lthV += v; lthRc += rc; lthProfit += Number(r.v_profit); }
     waves[WAVE_LABELS[WAVE_OF[b]]] += v;
@@ -80,6 +127,36 @@ export async function snapshotAndRollupDay(day, log) {
     };
   }
 
+  // ---- Address cohorts: one GROUP BY address pass over the live set ---------
+  // The only per-address aggregation in the pipeline. It runs on a dedicated
+  // session with a raised work_mem so the hash aggregate stays in memory at
+  // late-chain address counts; everything else about the day pause is
+  // unaffected. Addresses are not entities (one exchange address is not one
+  // person) — the catalog copy carries that caveat.
+  const cohortClient = await pool.connect();
+  let bandRows;
+  try {
+    await cohortClient.query(`SET work_mem = '512MB'`);
+    bandRows = (await cohortClient.query(`
+      SELECT width_bucket(bal, $1::numeric[]) AS b, COUNT(*)::int n, SUM(bal) v
+      FROM (SELECT SUM(value_sat)::numeric / 1e8 AS bal
+            FROM utxos WHERE spent_height IS NULL AND address IS NOT NULL
+            GROUP BY address) t
+      GROUP BY 1`, [BAL_THRESHOLDS])).rows;
+    await cohortClient.query('RESET work_mem');
+  } finally { cohortClient.release(); }
+  let addressedSupply = 0, wholecoinerCount = 0;
+  const balBands = Object.fromEntries(BAL_LABELS.map(l => [l, 0]));
+  for (const r of bandRows) {
+    const b = Number(r.b), v = Number(r.v);
+    addressedSupply += v;
+    balBands[BAL_LABELS[b]] += v;
+    if (b >= BAL_LABELS.indexOf('1–10')) wholecoinerCount += Number(r.n);
+  }
+  for (const k of BAL_LABELS) {
+    balBands[k] = addressedSupply > 0 ? balBands[k] / addressedSupply : 0;
+  }
+
   // ---- Flow rollup from per-block aggregates --------------------------------
   const f = (await pool.query(`
     SELECT COALESCE(SUM(sopr_num),0) sn, COALESCE(SUM(sopr_den),0) sd,
@@ -88,8 +165,43 @@ export async function snapshotAndRollupDay(day, log) {
            COALESCE(SUM(lth_sopr_num),0) ltn, COALESCE(SUM(lth_sopr_den),0) ltd,
            COALESCE(SUM(realized_profit),0) rp, COALESCE(SUM(realized_loss),0) rl,
            COALESCE(SUM(cdd),0) cdd, COALESCE(SUM(vdd_usd),0) vdd,
-           COALESCE(SUM(transfer_vol_sat),0)::numeric / 1e8 vol
+           COALESCE(SUM(transfer_vol_sat),0)::numeric / 1e8 vol,
+           COALESCE(SUM(op_return_fees_sat),0)::numeric / 1e8 oprf,
+           COALESCE(SUM(miner_outflow_sat),0)::numeric / 1e8 mout
     FROM block_agg WHERE day=$1`, [day])).rows[0];
+
+  // Spend-side age bands and the fee-rate histogram merge across the day's
+  // blocks in SQL (sparse JSONB objects, summed per key).
+  const bandAgg = (await pool.query(`
+    SELECT key AS band, SUM(value::numeric) AS v
+    FROM block_agg, jsonb_each_text(spent_age_bands)
+    WHERE day = $1 AND spent_age_bands IS NOT NULL GROUP BY key`, [day])).rows;
+  const histAgg = (await pool.query(`
+    SELECT key::int AS b, SUM(value::numeric)::bigint AS n
+    FROM block_agg, jsonb_each_text(feerate_hist)
+    WHERE day = $1 AND feerate_hist IS NOT NULL GROUP BY key ORDER BY 1`, [day])).rows;
+
+  let spentTotal = 0, revived1y = 0;
+  for (const r of bandAgg) {
+    spentTotal += Number(r.v);
+    if (REVIVED_BANDS.has(r.band)) revived1y += Number(r.v);
+  }
+  const spentBands = spentTotal > 0
+    ? Object.fromEntries(bandAgg.map(r => [r.band, Number(r.v) / spentTotal])) : null;
+
+  let medianFeerate = null;
+  const histTotal = histAgg.reduce((a, r) => a + Number(r.n), 0);
+  if (histTotal > 0) {
+    const target = Math.ceil(histTotal / 2);
+    let cum = 0;
+    for (const r of histAgg) {
+      cum += Number(r.n);
+      if (cum >= target) { medianFeerate = feerateBucketValue(Number(r.b)); break; }
+    }
+  }
+
+  const active = (await pool.query(
+    'SELECT COUNT(*)::int c FROM day_active_addresses WHERE day = $1', [day])).rows[0].c;
 
   const blk = (await pool.query(`
     SELECT COALESCE(SUM(tx_count),0) txs,
@@ -136,6 +248,21 @@ export async function snapshotAndRollupDay(day, log) {
     // sat/vB over the whole day; NULL unless every block has a recorded weight.
     const dayVsize = blk.wt !== null ? Number(blk.wt) / 4 : null;
     const avgFeerate = dayVsize > 0 ? Number(blk.fees_sat) / dayVsize : null;
+    const opReturnFeesUsd = Number(f.oprf) * price;
+    // Weighted median acquisition price of the live set, interpolated inside
+    // its URPD bucket — so its resolution is the bucket width, stated in the
+    // catalog method note.
+    let medianCostBasis = null;
+    if (urpd && setSupply > 0) {
+      let cum = 0;
+      for (const bkt of urpd.buckets) {
+        if (cum + bkt.v >= setSupply / 2) {
+          medianCostBasis = bkt.p + urpd.width * ((setSupply / 2 - cum) / bkt.v);
+          break;
+        }
+        cum += bkt.v;
+      }
+    }
     // Utilization of consensus capacity (a full pre-SegWit 1 MB block weighs
     // exactly the 4M limit, so the ratio is comparable across eras).
     const blockFullness = blk.wt !== null && Number(blk.nblocks) > 0
@@ -174,10 +301,14 @@ export async function snapshotAndRollupDay(day, log) {
         balanced_price, transferred_price, nvt, tx_count, transfer_vol_btc, transfer_vol_usd,
         aviv, true_market_mean, sth_nupl, lth_nupl, sell_side_risk, rhodl, dormancy,
         terminal_price, supply_1y_plus_pct, sth_profit_pct, lth_profit_pct, urpd,
-        hashprice_usd_ph, fees_usd, avg_feerate, block_fullness_pct, issuance_rate)
+        hashprice_usd_ph, fees_usd, avg_feerate, block_fullness_pct, issuance_rate,
+        op_return_fees_usd, median_feerate, spent_age_bands, revived_supply_1y,
+        miner_outflow_btc, active_addresses, unrealized_profit_usd, unrealized_loss_usd,
+        miner_unmoved_supply, median_cost_basis, wholecoiner_count, balance_bands)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
         $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,
-        $40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56)
+        $40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,
+        $57,$58,$59,$60,$61,$62,$63,$64,$65,$66,$67,$68)
       ON CONFLICT (day) DO UPDATE SET price=EXCLUDED.price, market_cap=EXCLUDED.market_cap`,
       [day, price, supplyBtc, marketCap, realizedCap,
        realizedPrice, div(marketCap, realizedCap), marketCap > 0 ? (marketCap - realizedCap) / marketCap : null,
@@ -194,7 +325,15 @@ export async function snapshotAndRollupDay(day, log) {
        aviv, trueMarketMean, sthNupl, lthNupl, sellSideRisk, rhodl, dormancy,
        terminalPrice, supply1yPlus, div(sthProfit, sthV), div(lthProfit, lthV),
        urpd ? JSON.stringify(urpd) : null,
-       hashprice, feesUsd, avgFeerate, blockFullness, issuanceRate]);
+       hashprice, feesUsd, avgFeerate, blockFullness, issuanceRate,
+       opReturnFeesUsd, medianFeerate,
+       spentBands ? JSON.stringify(spentBands) : null, revived1y,
+       Number(f.mout), active, unrealProfit, unrealLoss,
+       minerUnmoved, medianCostBasis, wholecoinerCount,
+       JSON.stringify(balBands)]);
+
+    // The day's active-address staging rows have served their purpose.
+    await client.query('DELETE FROM day_active_addresses WHERE day <= $1', [day]);
 
     // Window-derived metrics need history: compute in one follow-up UPDATE.
     await client.query(`
