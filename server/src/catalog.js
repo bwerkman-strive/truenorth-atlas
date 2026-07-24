@@ -440,6 +440,20 @@ export const METRICS = [
     method: 'Count of transactions in all blocks per UTC day.',
   },
   {
+    slug: 'total-fees', column: 'fees_usd', name: 'Total Fees', category: 'network', ...usdC,
+    logDefault: true,
+    short: 'Total transaction fees paid to miners per day, in USD.',
+    explain: 'Fees are the purest measure of demand for block space: every dollar here is someone paying to settle now rather than later. Fee eras tell the demand story of each cycle (the 2017 mania, the 2021 top, the 2023 inscription wave, the 2024 Runes launch), and the long-run trend is the revenue base that must eventually replace the halving subsidy as the security budget.',
+    method: 'Sum of all transaction fees per UTC day, valued at the day\'s close. Historical demand context, not fee guidance; consult a live mempool tool when choosing a fee rate today.',
+  },
+  {
+    slug: 'avg-feerate', column: 'avg_feerate', name: 'Average Fee Rate', category: 'network',
+    format: 'number', unit: 'sat/vB', logDefault: true,
+    short: 'The average price paid per unit of block space each day, in satoshis per virtual byte.',
+    explain: 'Where Total Fees measures aggregate demand in dollars, this is the unit price of settlement itself, independent of the BTC price. Sustained readings near the network floor mean blocks are clearing with room to spare; sustained high readings mean users are bidding against each other for scarce space, the signature of every on-chain congestion era.',
+    method: 'Total fees ÷ total virtual size (block weight ÷ 4) of all blocks per UTC day. A volume-weighted daily average, not a median: single large payers can pull it above what a typical transaction paid.',
+  },
+  {
     slug: 'cdd-90d', column: 'cdd_90d_sum', name: '90-Day CDD', category: 'behavior', ...num,
     short: 'Rolling 90-day sum of coin days destroyed.',
     explain: 'Smoothing CDD over a quarter filters daily noise and exposes regime shifts in old-coin movement: the cleanest single view of whether dormant supply is waking up.',

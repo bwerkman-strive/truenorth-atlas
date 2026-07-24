@@ -160,6 +160,8 @@ CREATE TABLE IF NOT EXISTS metrics_daily (
   hashrate_30d       NUMERIC,      -- EH/s, 30d SMA (hash ribbons)
   hashrate_60d       NUMERIC,      -- EH/s, 60d SMA (hash ribbons)
   hashprice_usd_ph   NUMERIC,      -- USD earned per PH/s per day (miner revenue / hashrate)
+  fees_usd           NUMERIC,      -- total transaction fees per day, valued at the close
+  avg_feerate        NUMERIC,      -- sat/vB; day fees / day vsize (NULL if any block lacks weight)
   supply_1y_plus_pct NUMERIC,      -- 0..1, share of supply dormant >= 1y
   sth_profit_pct     NUMERIC,      -- 0..1, share of STH supply in profit
   lth_profit_pct     NUMERIC,      -- 0..1, share of LTH supply in profit
@@ -182,6 +184,8 @@ ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS sth_profit_pct NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS lth_profit_pct NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS urpd JSONB;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS hashprice_usd_ph NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS fees_usd NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS avg_feerate NUMERIC;
 
 -- Backfill hashprice for days finalized before the column existed. Pure
 -- derivation of two already-populated columns, so this is a no-op once filled
@@ -189,6 +193,23 @@ ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS hashprice_usd_ph NUMERIC;
 UPDATE metrics_daily
 SET hashprice_usd_ph = miner_rev_usd / (hashrate_ehs * 1e3)
 WHERE hashprice_usd_ph IS NULL AND miner_rev_usd IS NOT NULL AND hashrate_ehs > 0;
+
+-- Backfill fee metrics for days finalized before the columns existed, straight
+-- from blocks + prices (no chain refetch). Pre-market days come out 0 in USD,
+-- the same zero-basis economics as everywhere else. avg_feerate stays NULL for
+-- a day unless every one of its blocks has a recorded weight; the fees_usd
+-- IS NULL gate makes this a no-op once filled.
+UPDATE metrics_daily m
+SET fees_usd    = b.fees_btc * p.close_usd,
+    avg_feerate = CASE WHEN b.wt > 0 THEN b.fees_sat / (b.wt / 4.0) END
+FROM (SELECT day,
+             SUM(fees_sat)::numeric                                 AS fees_sat,
+             SUM(fees_sat)::numeric / 1e8                           AS fees_btc,
+             CASE WHEN COUNT(*) = COUNT(weight)
+                  THEN SUM(weight)::numeric END                     AS wt
+      FROM blocks GROUP BY day) b
+JOIN prices p ON p.day = b.day
+WHERE b.day = m.day AND m.fees_usd IS NULL;
 
 -- Seed persistent counters
 INSERT INTO chain_state(key, value) VALUES

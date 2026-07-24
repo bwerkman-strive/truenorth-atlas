@@ -95,6 +95,8 @@ export async function snapshotAndRollupDay(day, log) {
     SELECT COALESCE(SUM(tx_count),0) txs,
            COALESCE(SUM(subsidy_sat + fees_sat),0)::numeric / 1e8 minted,
            COALESCE(SUM(fees_sat),0)::numeric / 1e8 fees,
+           COALESCE(SUM(fees_sat),0)::numeric fees_sat,
+           CASE WHEN COUNT(*) = COUNT(weight) THEN SUM(weight)::numeric END wt,
            MAX(difficulty) diff
     FROM blocks WHERE day=$1`, [day])).rows[0];
 
@@ -128,6 +130,10 @@ export async function snapshotAndRollupDay(day, log) {
     const hashrateEhs = diff !== null ? diff * 2 ** 32 / 600 / 1e18 : null;
     // Hashprice: what one PH/s earned today. Pre-market days give 0 (rev = 0).
     const hashprice = hashrateEhs > 0 ? minerRev / (hashrateEhs * 1e3) : null;
+    const feesUsd = Number(blk.fees) * price;
+    // sat/vB over the whole day; NULL unless every block has a recorded weight.
+    const dayVsize = blk.wt !== null ? Number(blk.wt) / 4 : null;
+    const avgFeerate = dayVsize > 0 ? Number(blk.fees_sat) / dayVsize : null;
 
     // Cointime economics: investor cap strips the miner-earned share out of
     // realized cap; active cap discounts market cap by liveliness (the share
@@ -160,10 +166,10 @@ export async function snapshotAndRollupDay(day, log) {
         balanced_price, transferred_price, nvt, tx_count, transfer_vol_btc, transfer_vol_usd,
         aviv, true_market_mean, sth_nupl, lth_nupl, sell_side_risk, rhodl, dormancy,
         terminal_price, supply_1y_plus_pct, sth_profit_pct, lth_profit_pct, urpd,
-        hashprice_usd_ph)
+        hashprice_usd_ph, fees_usd, avg_feerate)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
         $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,
-        $40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52)
+        $40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54)
       ON CONFLICT (day) DO UPDATE SET price=EXCLUDED.price, market_cap=EXCLUDED.market_cap`,
       [day, price, supplyBtc, marketCap, realizedCap,
        realizedPrice, div(marketCap, realizedCap), marketCap > 0 ? (marketCap - realizedCap) / marketCap : null,
@@ -180,7 +186,7 @@ export async function snapshotAndRollupDay(day, log) {
        aviv, trueMarketMean, sthNupl, lthNupl, sellSideRisk, rhodl, dormancy,
        terminalPrice, supply1yPlus, div(sthProfit, sthV), div(lthProfit, lthV),
        urpd ? JSON.stringify(urpd) : null,
-       hashprice]);
+       hashprice, feesUsd, avgFeerate]);
 
     // Window-derived metrics need history: compute in one follow-up UPDATE.
     await client.query(`
