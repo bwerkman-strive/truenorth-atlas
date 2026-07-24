@@ -62,7 +62,8 @@ const { processBlocks, checkReorg, loadHeightMeta, heightMeta, tipHeight } = awa
 
 before(async () => {
   await migrate();
-  await pool.query('TRUNCATE blocks, block_agg, utxos, prices, metrics_daily, chain_state');
+  await (await import('./guard.js')).assertScratchDb();
+  await pool.query('TRUNCATE blocks, block_agg, utxos, prices, metrics_daily, chain_state, day_active_addresses');
   bustPriceCache();
   heightMeta.length = 0;
 });

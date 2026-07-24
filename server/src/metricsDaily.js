@@ -47,6 +47,71 @@ const REVIVED_BANDS = new Set(['1y–2y', '2y–3y', '3y–5y', '5y–7y', '7y�
 const BAL_THRESHOLDS = [0.01, 0.1, 1, 10, 100, 1000, 10000];
 const BAL_LABELS = ['<0.01', '0.01–0.1', '0.1–1', '1–10', '10–100', '100–1k', '1k–10k', '10k+'];
 
+// At the live tip, a day's blocks are processed before that day's candle
+// exists, so priceForDay falls back to the previous close and marks the day
+// provisional (chain_state 'provisional:<day>'). Once the true close exists,
+// this re-stamps the day's still-live creations and mirrors the correction
+// into block_agg (realized_cap_delta, miner_rev_usd) and the running counters,
+// so rollbackAbove() stays exactly reversible and the realized-cap books
+// balance to the satoshi-level tolerance the reconciliation gate enforces.
+// Residuals accepted by design: same-day spends' flow stats (SOPR components,
+// vdd) keep the provisional spot for that one day — self-contained per-day
+// fuzz, not accumulating state. During a healthy replay historical candles
+// always exist, the flag never appears, and this is a single SELECT.
+async function repriceProvisionalDay(day, price, log) {
+  const flag = await pool.query(
+    `SELECT 1 FROM chain_state WHERE key = $1`, ['provisional:' + day]);
+  if (!flag.rows.length) return;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const hr = await client.query(
+      'SELECT MIN(height) lo, MAX(height) hi FROM blocks WHERE day=$1', [day]);
+    const { lo, hi } = hr.rows[0];
+    if (lo !== null) {
+      // Per-block creation-side corrections from the still-live rows.
+      const per = await client.query(`
+        SELECT created_height h, SUM(value_sat::numeric / 1e8 * ($1 - created_price)) a
+        FROM utxos
+        WHERE created_height BETWEEN $2 AND $3
+          AND spent_height IS NULL AND created_price <> $1
+        GROUP BY 1`, [price, lo, hi]);
+      let rcAdj = 0;
+      if (per.rows.length) {
+        rcAdj = per.rows.reduce((s, r) => s + Number(r.a), 0);
+        await client.query(`
+          UPDATE block_agg b SET realized_cap_delta = realized_cap_delta + x.a
+          FROM unnest($1::int[], $2::numeric[]) AS x(h, a)
+          WHERE b.height = x.h`,
+          [per.rows.map(r => r.h), per.rows.map(r => Number(r.a))]);
+        await client.query(`
+          UPDATE utxos SET created_price = $1
+          WHERE created_height BETWEEN $2 AND $3
+            AND spent_height IS NULL AND created_price <> $1`, [price, lo, hi]);
+      }
+
+      // Miner revenue re-valued at the true close (old total -> new total).
+      const oldRev = Number((await client.query(
+        `SELECT COALESCE(SUM(miner_rev_usd),0) v FROM block_agg WHERE day=$1`, [day])).rows[0].v);
+      await client.query(`
+        UPDATE block_agg a SET miner_rev_usd = (b.subsidy_sat + b.fees_sat)::numeric / 1e8 * $2
+        FROM blocks b WHERE b.height = a.height AND a.day = $1`, [day, price]);
+      const newRev = Number((await client.query(
+        `SELECT COALESCE(SUM(miner_rev_usd),0) v FROM block_agg WHERE day=$1`, [day])).rows[0].v);
+
+      await setState(client, 'realized_cap_usd',
+        (await getState(client, 'realized_cap_usd')) + rcAdj);
+      await setState(client, 'cum_miner_rev_usd',
+        (await getState(client, 'cum_miner_rev_usd')) + (newRev - oldRev));
+      log?.info({ day, price, rcAdj, minerRevAdj: newRev - oldRev },
+        'repriced provisional day at its finalized close');
+    }
+    await client.query(`DELETE FROM chain_state WHERE key = $1`, ['provisional:' + day]);
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+}
+
 export async function snapshotAndRollupDay(day, log) {
   const last = await pool.query(`SELECT value FROM chain_state WHERE key='last_metrics_day_epoch'`);
   const lastEpoch = last.rows.length ? Number(last.rows[0].value) : 0;
@@ -61,6 +126,7 @@ export async function snapshotAndRollupDay(day, log) {
     throw new Error(`no daily close for ${day}: prices table has a gap; refusing to finalize`);
   }
   const price = Number(priceR.rows[0].close_usd);
+  await repriceProvisionalDay(day, price, log); // before any set scan reads stamps
   const dayEnd = new Date((dayEpoch + 1) * 86400e3).toISOString();
 
   // ---- Set-level snapshot: one scan of the live UTXO set -------------------
@@ -219,7 +285,31 @@ export async function snapshotAndRollupDay(day, log) {
   try {
     await client.query('BEGIN');
     const realizedCap = await getState(client, 'realized_cap_usd');
-    const supplyBtc = (await getState(client, 'circulating_supply_sat')) / 1e8;
+    const supplySat = await getState(client, 'circulating_supply_sat');
+    const supplyBtc = supplySat / 1e8;
+
+    // ---- Reconciliation gate --------------------------------------------
+    // The running counters and the tables they summarize are maintained by
+    // independent code paths; if they ever disagree, something upstream wrote
+    // corrupt state and finalizing would bake it into history. Halt instead:
+    // a crash-looping worker the same day is recoverable (rollback window),
+    // a poisoned month is a from-genesis replay.
+    //   supply: exact integer identity against SUM(blocks.subsidy_sat).
+    //   realized cap: live-set sum vs counter. Tolerance covers float
+    //   accumulation (~1e-12 relative) and the two historic BIP30 duplicate
+    //   coinbases, whose creations were double-counted at ~$0.06 closes (a
+    //   few dollars, forever). $100 floor + 1e-8 relative is 1000x margin.
+    const subsidySum = Number((await client.query(
+      'SELECT COALESCE(SUM(subsidy_sat),0)::bigint s FROM blocks')).rows[0].s);
+    if (subsidySum !== supplySat) {
+      throw new Error(`reconciliation failed for ${day}: circulating_supply_sat ` +
+        `${supplySat} != SUM(blocks.subsidy_sat) ${subsidySum} — refusing to finalize`);
+    }
+    const rcTol = Math.max(100, Math.abs(realizedCap) * 1e-8);
+    if (Math.abs(realizedCap - setRc) > rcTol) {
+      throw new Error(`reconciliation failed for ${day}: realized_cap_usd counter ` +
+        `${realizedCap} vs live-set sum ${setRc} (tolerance ${rcTol}) — refusing to finalize`);
+    }
     const cumCdd = await getState(client, 'cum_cdd');
     const cumVdd = await getState(client, 'cum_vdd_usd');
     const thermocap = await getState(client, 'cum_miner_rev_usd');

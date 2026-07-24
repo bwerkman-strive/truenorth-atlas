@@ -107,7 +107,8 @@ const getJson = async (p, headers = {}) => {
 
 before(async () => {
   await migrate();
-  await pool.query('TRUNCATE blocks, block_agg, utxos, prices, metrics_daily, chain_state, api_keys, admins');
+  await (await import('./guard.js')).assertScratchDb();
+  await pool.query('TRUNCATE blocks, block_agg, utxos, prices, metrics_daily, chain_state, api_keys, admins, day_active_addresses');
   await pool.query(`INSERT INTO prices (day, close_usd) VALUES ('2024-06-01', 100)`);
   bustPriceCache();
   heightMeta.length = 0;

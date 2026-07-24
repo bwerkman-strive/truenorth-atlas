@@ -103,6 +103,16 @@ web/src/
    parameters.
 10. **Halving constants** exist in `api.js` (HALVINGS dates) and `web/src/epoch.js`
     (210,000-block math) — keep them consistent if touched.
+11. **Integrity gates fail loud, never degrade silently** (born of the
+    2015-08-26 price-gap incident, which poisoned a full replay). Finalized
+    daily closes are immutable (`upsertPrices` refuses revisions); the worker
+    refuses to sync over a price gap, zero, or implausible jump
+    (`assertNoPriceGaps`); day finalization reconciles the running counters
+    against independent recomputation and throws on mismatch; corrupt block
+    data (missing prevouts, outputs > inputs) rejects the block; provisional
+    tip-day cost bases are re-stamped at the finalized close. A halt means
+    the books do not balance — investigate, never bypass the gate to "get it
+    moving again". `integration.integrity.test.js` enforces all of this.
 
 ## Conventions
 

@@ -220,10 +220,22 @@ export async function processBlocks(blocks) {
         if (!isCoinbase) {
           for (const vin of tx.vin) {
             const p = vin.prevout;
-            if (!p) continue;
+            // A missing prevout would silently undercount volume, fees, and
+            // realized-cap destruction — permanent drift. Refuse the block.
+            if (!p || p.value === undefined || p.height === undefined) {
+              throw new Error(`block ${b.height} tx ${tx.txid}: input missing prevout data ` +
+                `(node contract violation) — refusing to underaccount`);
+            }
             const vSat = Math.round(p.value * SAT);
             inSat += vSat;
             const meta = heightMeta[p.height];
+            // Same-block spends legitimately have no meta yet (the block is
+            // still being processed); anything else missing means the block
+            // index is corrupt and ages/cost-days would be silently wrong.
+            if (!meta && p.height !== b.height) {
+              throw new Error(`block ${b.height}: no height metadata for prevout at ` +
+                `${p.height} — block index corrupt, refusing to misprice the spend`);
+            }
             const cTime = meta ? meta.t : b.time;
             const cDay = meta ? meta.d : day;
             const cPrice = await priceForDay(cDay);
@@ -284,7 +296,13 @@ export async function processBlocks(blocks) {
         if (isCoinbase) {
           mintedSat += outSat;
         } else {
-          const fee = Math.max(0, inSat - outSat);
+          // Outputs exceeding inputs is impossible for a valid tx; clamping it
+          // to zero (the old behavior) would mask corrupt prevout data.
+          if (inSat < outSat) {
+            throw new Error(`block ${b.height} tx ${tx.txid}: outputs (${outSat}) exceed ` +
+              `inputs (${inSat}) — corrupt prevout data, refusing to continue`);
+          }
+          const fee = inSat - outSat;
           feesSat += fee;
           if (hasOpReturn) {
             agg.oprFees += fee; // whole-tx fee attribution, the standard convention
@@ -403,6 +421,30 @@ export async function processBlocks(blocks) {
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
 }
 
+// Boot-time proof that the node emits everything the accounting relies on.
+// Block 170 contains the first coinbase spend in history (block 9's reward,
+// Satoshi to Hal), so one fetch validates the whole verbosity-3 contract:
+// inlined prevouts with value/height, the `generated` flag miner-outflow
+// depends on (absent => the metric silently reads 0 forever), addresses on
+// prevout scripts, and per-tx vsize for the feerate histograms.
+export async function assertNodeContract() {
+  const hash = await rpc.getBlockHash(170);
+  const blk = await rpc.getBlockV3(hash);
+  const spend = blk?.tx?.[1];
+  const p = spend?.vin?.[0]?.prevout;
+  if (!p || p.value === undefined || p.height === undefined) {
+    throw new Error('node contract: getblock verbosity=3 did not inline prevout ' +
+      'value/height (Core 25+ with undo data required)');
+  }
+  if (p.generated !== true) {
+    throw new Error('node contract: prevout.generated missing — miner outflow ' +
+      'would silently record 0 for the entire sync');
+  }
+  if (!(spend.vsize > 0)) {
+    throw new Error('node contract: tx.vsize missing — feerate histograms would be empty');
+  }
+}
+
 export async function pruneSpent(tip) {
   await pool.query('DELETE FROM utxos WHERE spent_height IS NOT NULL AND spent_height < $1',
     [tip - config.pruneDepth]);
@@ -476,6 +518,8 @@ export async function main() {
     log.info('price history ready');
   }
   await loadHeightMeta();
+  await assertNodeContract();
+  log.info('node RPC contract verified (prevouts, generated flag, vsize)');
 
   let lastPriceSync = Date.now();
   let lastPrune = 0;
