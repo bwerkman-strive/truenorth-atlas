@@ -45,10 +45,12 @@ const cb = (txid, height, valueBtc) => ({
 
 function chain() {
   return [
-    { height: 1, hash: 'h1', time: t(D1, 6), difficulty: 1, tx: [cb(txidA, 1, 50)] },
+    { height: 1, hash: 'h1', time: t(D1, 6), difficulty: 1, weight: 1000, tx: [cb(txidA, 1, 50)] },
+    // h2 deliberately reports no weight: day-1's avg_feerate must stay NULL
+    // rather than compute from a partial denominator.
     { height: 2, hash: 'h2', time: t(D1, 12), difficulty: 1, tx: [cb(txidB, 2, 50)] },
     {
-      height: 3, hash: 'h3', time: t(D2, 9), difficulty: 2, tx: [
+      height: 3, hash: 'h3', time: t(D2, 9), difficulty: 2, weight: 4000, tx: [
         cb(txidC, 3, 50.001), // 50 BTC subsidy + 0.001 BTC fees claimed
         {
           txid: txidS,
@@ -236,6 +238,29 @@ test('tier-1 metrics: cointime, cohort NUPL, sell-side risk, dormancy, price mod
   const hrPh1 = 2 ** 32 / 600 / 1e15;
   assert.ok(Math.abs(Number(r1.hashprice_usd_ph) / (100 * 100 / hrPh1) - 1) < 1e-12,
     `hashprice=${r1.hashprice_usd_ph}`);
+});
+
+test('fee metrics: total fees in USD and day-level average fee rate', async () => {
+  const r1 = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D1])).rows[0];
+  const r2 = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D2])).rows[0];
+
+  // Day 1: two fee-less coinbases. $0 in fees; avg_feerate is NULL because
+  // h2 carries no weight (partial denominators must not produce a number).
+  assert.equal(Number(r1.fees_usd), 0);
+  assert.equal(r1.avg_feerate, null);
+
+  // Day 2: 0.001 BTC of fees at the $200 close = $0.20. Fee rate:
+  // 100,000 sats over h3's weight 4000 (vsize 1000) = 100 sat/vB.
+  assert.ok(Math.abs(Number(r2.fees_usd) - 0.2) < 1e-9, `fees_usd=${r2.fees_usd}`);
+  assert.ok(Math.abs(Number(r2.avg_feerate) - 100) < 1e-9, `avg_feerate=${r2.avg_feerate}`);
+
+  // The schema backfill must reproduce the same values for rows finalized
+  // before the columns existed (simulated by nulling them out).
+  await pool.query('UPDATE metrics_daily SET fees_usd=NULL, avg_feerate=NULL WHERE day=$1', [D2]);
+  await migrate();
+  const rb = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D2])).rows[0];
+  assert.ok(Math.abs(Number(rb.fees_usd) - 0.2) < 1e-9, 'backfill restores fees_usd');
+  assert.ok(Math.abs(Number(rb.avg_feerate) - 100) < 1e-9, 'backfill restores avg_feerate');
 });
 
 test('cohort supply in profit: STH breadth from the snapshot, LTH undefined pre-cohort', async () => {
