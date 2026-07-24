@@ -96,6 +96,8 @@ export async function snapshotAndRollupDay(day, log) {
            COALESCE(SUM(subsidy_sat + fees_sat),0)::numeric / 1e8 minted,
            COALESCE(SUM(fees_sat),0)::numeric / 1e8 fees,
            COALESCE(SUM(fees_sat),0)::numeric fees_sat,
+           COALESCE(SUM(subsidy_sat),0)::numeric / 1e8 subsidy,
+           COUNT(*)::int nblocks,
            CASE WHEN COUNT(*) = COUNT(weight) THEN SUM(weight)::numeric END wt,
            MAX(difficulty) diff
     FROM blocks WHERE day=$1`, [day])).rows[0];
@@ -134,6 +136,12 @@ export async function snapshotAndRollupDay(day, log) {
     // sat/vB over the whole day; NULL unless every block has a recorded weight.
     const dayVsize = blk.wt !== null ? Number(blk.wt) / 4 : null;
     const avgFeerate = dayVsize > 0 ? Number(blk.fees_sat) / dayVsize : null;
+    // Utilization of consensus capacity (a full pre-SegWit 1 MB block weighs
+    // exactly the 4M limit, so the ratio is comparable across eras).
+    const blockFullness = blk.wt !== null && Number(blk.nblocks) > 0
+      ? Number(blk.wt) / (Number(blk.nblocks) * 4e6) : null;
+    // Annualized monetary inflation: claimed subsidy only (fees recycle coins).
+    const issuanceRate = supplyBtc > 0 ? Number(blk.subsidy) * 365 / supplyBtc : null;
 
     // Cointime economics: investor cap strips the miner-earned share out of
     // realized cap; active cap discounts market cap by liveliness (the share
@@ -166,10 +174,10 @@ export async function snapshotAndRollupDay(day, log) {
         balanced_price, transferred_price, nvt, tx_count, transfer_vol_btc, transfer_vol_usd,
         aviv, true_market_mean, sth_nupl, lth_nupl, sell_side_risk, rhodl, dormancy,
         terminal_price, supply_1y_plus_pct, sth_profit_pct, lth_profit_pct, urpd,
-        hashprice_usd_ph, fees_usd, avg_feerate)
+        hashprice_usd_ph, fees_usd, avg_feerate, block_fullness_pct, issuance_rate)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
         $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,
-        $40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54)
+        $40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56)
       ON CONFLICT (day) DO UPDATE SET price=EXCLUDED.price, market_cap=EXCLUDED.market_cap`,
       [day, price, supplyBtc, marketCap, realizedCap,
        realizedPrice, div(marketCap, realizedCap), marketCap > 0 ? (marketCap - realizedCap) / marketCap : null,
@@ -186,7 +194,7 @@ export async function snapshotAndRollupDay(day, log) {
        aviv, trueMarketMean, sthNupl, lthNupl, sellSideRisk, rhodl, dormancy,
        terminalPrice, supply1yPlus, div(sthProfit, sthV), div(lthProfit, lthV),
        urpd ? JSON.stringify(urpd) : null,
-       hashprice, feesUsd, avgFeerate]);
+       hashprice, feesUsd, avgFeerate, blockFullness, issuanceRate]);
 
     // Window-derived metrics need history: compute in one follow-up UPDATE.
     await client.query(`

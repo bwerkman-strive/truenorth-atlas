@@ -346,6 +346,13 @@ export const METRICS = [
     method: 'Cumulative block subsidies from the daily UTXO-set snapshot. The projection extends the consensus subsidy schedule from the current chain tip until issuance ends (block 6,930,000, around 2141), estimating future dates at 600 seconds per block; halvings are marked at each 210,000-block boundary (dashed markers are estimates).',
   },
   {
+    slug: 'issuance-rate', column: 'issuance_rate', name: 'Issuance Rate', category: 'mining', ...pct,
+    logDefault: true,
+    short: 'New supply minted per year at the current pace, as a share of existing supply.',
+    explain: 'Bitcoin\'s monetary inflation rate, and the supply-side mechanics behind the four-year cycle framework: each halving cuts it in half on a fixed schedule, entirely indifferent to demand. Comparing it against gold\'s roughly 1.5 to 2 percent annual stock growth, or any fiat aggregate, is the single cleanest chart of what "disinflationary hard money" means. Below one percent (the post-2024 regime), new issuance is nearly a rounding error, and the security-budget conversation shifts to fees.',
+    method: 'Claimed block subsidy per UTC day, annualized (times 365), divided by end-of-day circulating supply. Fees are excluded: they recycle existing coins rather than mint new ones.',
+  },
+  {
     slug: 'puell-multiple', column: 'puell', name: 'Puell Multiple', category: 'mining', ...ratio,
     zones: [
       { from: 0, to: 0.5, label: 'Miner income stress', tone: 'cold' },
@@ -452,6 +459,12 @@ export const METRICS = [
     short: 'The average price paid per unit of block space each day, in satoshis per virtual byte.',
     explain: 'Where Total Fees measures aggregate demand in dollars, this is the unit price of settlement itself, independent of the BTC price. Sustained readings near the network floor mean blocks are clearing with room to spare; sustained high readings mean users are bidding against each other for scarce space, the signature of every on-chain congestion era.',
     method: 'Total fees ÷ total virtual size (block weight ÷ 4) of all blocks per UTC day. A volume-weighted daily average, not a median: single large payers can pull it above what a typical transaction paid.',
+  },
+  {
+    slug: 'block-fullness', column: 'block_fullness_pct', name: 'Block Fullness', category: 'network', ...pct,
+    short: 'How full blocks are on average each day, as a share of consensus capacity.',
+    explain: 'Block space is the commodity this network sells, and this is its utilization rate. Sustained readings near 100% mean settlement demand exceeds capacity and fees must ration access (every congestion era prints here first); slack readings mean space is abundant and settlement is cheap. Read it alongside Average Fee Rate: fullness is the quantity constraint, the fee rate is the clearing price.',
+    method: 'Sum of block weight per UTC day ÷ (blocks that day × the 4,000,000 weight-unit consensus limit). Comparable across eras: a full pre-SegWit 1 MB block weighs exactly the 4M limit.',
   },
   {
     slug: 'cdd-90d', column: 'cdd_90d_sum', name: '90-Day CDD', category: 'behavior', ...num,

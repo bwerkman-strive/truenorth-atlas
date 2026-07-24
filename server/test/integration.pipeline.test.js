@@ -263,6 +263,28 @@ test('fee metrics: total fees in USD and day-level average fee rate', async () =
   assert.ok(Math.abs(Number(rb.avg_feerate) - 100) < 1e-9, 'backfill restores avg_feerate');
 });
 
+test('capacity metrics: block fullness and annualized issuance rate', async () => {
+  const r1 = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D1])).rows[0];
+  const r2 = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D2])).rows[0];
+
+  // Day 1: h2 has no weight, so fullness must stay NULL (no partial
+  // denominators). Issuance: 100 BTC subsidy annualized over 100 BTC supply.
+  assert.equal(r1.block_fullness_pct, null);
+  assert.ok(Math.abs(Number(r1.issuance_rate) - 365) < 1e-9, `issuance=${r1.issuance_rate}`);
+
+  // Day 2: one block of weight 4000 against the 4M limit = 0.001 fullness.
+  // Issuance: 50 BTC subsidy (fees excluded) × 365 over 150 BTC supply.
+  assert.ok(Math.abs(Number(r2.block_fullness_pct) - 0.001) < 1e-12, `fullness=${r2.block_fullness_pct}`);
+  assert.ok(Math.abs(Number(r2.issuance_rate) - 50 * 365 / 150) < 1e-9, `issuance=${r2.issuance_rate}`);
+
+  // Schema backfill reproduces the rollup's values for pre-column rows.
+  await pool.query('UPDATE metrics_daily SET block_fullness_pct=NULL, issuance_rate=NULL WHERE day=$1', [D2]);
+  await migrate();
+  const rb = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D2])).rows[0];
+  assert.ok(Math.abs(Number(rb.block_fullness_pct) - 0.001) < 1e-12, 'backfill restores fullness');
+  assert.ok(Math.abs(Number(rb.issuance_rate) - 50 * 365 / 150) < 1e-9, 'backfill restores issuance');
+});
+
 test('cohort supply in profit: STH breadth from the snapshot, LTH undefined pre-cohort', async () => {
   const r1 = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D1])).rows[0];
   const r2 = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D2])).rows[0];
