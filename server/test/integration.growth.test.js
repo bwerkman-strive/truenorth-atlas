@@ -37,6 +37,7 @@ const { config } = await import('../src/config.js');
 let srv, base;
 before(async () => {
   await migrate();
+  await (await import('./guard.js')).assertScratchDb();
   await pool.query('TRUNCATE metrics_daily, alerts, prices');
   // Seed two epochs of metrics so cycles + cards have real data:
   // epoch 4 (2020-04-19 start): 30 days of mvrv 1.0->1.29

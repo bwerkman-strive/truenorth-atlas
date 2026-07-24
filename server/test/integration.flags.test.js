@@ -35,6 +35,7 @@ let srv, base;
 
 before(async () => {
   await migrate();
+  await (await import('./guard.js')).assertScratchDb();
   await pool.query('TRUNCATE metrics_daily, alerts, subscribers, email_log');
   srv = app.listen(0);
   base = `http://127.0.0.1:${srv.address().port}`;

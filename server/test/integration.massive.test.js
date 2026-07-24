@@ -62,6 +62,7 @@ const { app } = await import('../src/api.js');
 let srv, base;
 before(async () => {
   await migrate();
+  await (await import('./guard.js')).assertScratchDb();
   await pool.query('TRUNCATE prices, metrics_daily');
   bustPriceCache(); bustSpotCache();
   srv = app.listen(0);

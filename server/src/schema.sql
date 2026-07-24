@@ -88,6 +88,26 @@ CREATE TABLE IF NOT EXISTS block_agg (
 );
 CREATE INDEX IF NOT EXISTS block_agg_day_idx ON block_agg(day);
 ALTER TABLE block_agg ADD COLUMN IF NOT EXISTS miner_rev_usd NUMERIC;
+-- Per-block deltas for the 2026-07 metric bundle. All plain per-block values
+-- (no running counters), so reorg rollback remains "delete rows above H".
+-- History for these REQUIRES a from-genesis replay; there is deliberately no
+-- backfill here.
+ALTER TABLE block_agg ADD COLUMN IF NOT EXISTS op_return_fees_sat BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE block_agg ADD COLUMN IF NOT EXISTS op_return_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE block_agg ADD COLUMN IF NOT EXISTS op_return_bytes BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE block_agg ADD COLUMN IF NOT EXISTS miner_outflow_sat BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE block_agg ADD COLUMN IF NOT EXISTS spent_age_bands JSONB;  -- {age band: BTC spent}
+ALTER TABLE block_agg ADD COLUMN IF NOT EXISTS feerate_hist JSONB;     -- {bucket idx: tx count}
+
+-- Active-address staging: first sighting of each (day, address) as sender or
+-- receiver. Rows only exist for not-yet-finalized days (the day rollup counts
+-- then deletes them); rollbackAbove() deletes rows first seen above the fork.
+CREATE TABLE IF NOT EXISTS day_active_addresses (
+  day          DATE NOT NULL,
+  address      TEXT NOT NULL,
+  first_height INTEGER NOT NULL,
+  PRIMARY KEY (day, address)
+);
 
 CREATE TABLE IF NOT EXISTS prices (
   day       DATE PRIMARY KEY,
@@ -164,6 +184,19 @@ CREATE TABLE IF NOT EXISTS metrics_daily (
   avg_feerate        NUMERIC,      -- sat/vB; day fees / day vsize (NULL if any block lacks weight)
   block_fullness_pct NUMERIC,      -- 0..1; day weight / (blocks x 4M limit); NULL if any block lacks weight
   issuance_rate      NUMERIC,      -- annualized; day subsidy x 365 / circulating supply
+  -- 2026-07 metric bundle (history requires a from-genesis replay; no backfill)
+  op_return_fees_usd   NUMERIC,    -- fees paid by txs carrying an OP_RETURN output
+  median_feerate       NUMERIC,    -- sat/vB; bucket-resolution median across the day's txs
+  spent_age_bands      JSONB,      -- {age band: share of day's spent volume}
+  revived_supply_1y    NUMERIC,    -- BTC spent that day after >= 1y dormant
+  miner_outflow_btc    NUMERIC,    -- BTC; spends of coinbase-created outputs
+  active_addresses     INTEGER,    -- unique sender+receiver addresses that day
+  unrealized_profit_usd NUMERIC,   -- gross unrealized gains across the live set
+  unrealized_loss_usd  NUMERIC,    -- gross unrealized losses (positive number)
+  miner_unmoved_supply NUMERIC,    -- BTC in never-spent coinbase outputs
+  median_cost_basis    NUMERIC,    -- USD; weighted median acquisition price (URPD resolution)
+  wholecoiner_count    INTEGER,    -- addresses holding >= 1 BTC
+  balance_bands        JSONB,      -- {balance band: share of addressed supply}
   supply_1y_plus_pct NUMERIC,      -- 0..1, share of supply dormant >= 1y
   sth_profit_pct     NUMERIC,      -- 0..1, share of STH supply in profit
   lth_profit_pct     NUMERIC,      -- 0..1, share of LTH supply in profit
@@ -190,6 +223,18 @@ ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS fees_usd NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS avg_feerate NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS block_fullness_pct NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS issuance_rate NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS op_return_fees_usd NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS median_feerate NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS spent_age_bands JSONB;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS revived_supply_1y NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS miner_outflow_btc NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS active_addresses INTEGER;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS unrealized_profit_usd NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS unrealized_loss_usd NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS miner_unmoved_supply NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS median_cost_basis NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS wholecoiner_count INTEGER;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS balance_bands JSONB;
 
 -- Backfill hashprice for days finalized before the column existed. Pure
 -- derivation of two already-populated columns, so this is a no-op once filled

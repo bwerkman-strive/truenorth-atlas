@@ -44,11 +44,42 @@ async function fetchCoinbase(startISO, endISO) {
   return rows.map(([t, , , , close]) => ({ day: dayStr(new Date(t * 1000)), close }));
 }
 
-async function upsertPrices(rows) {
+// Providers may legitimately revise a candle while it finalizes; beyond that
+// window a stored close is IMMUTABLE. Every UTXO's cost basis was stamped from
+// the close at ingestion time and spends re-read this table, so a silent
+// historical revision desyncs the two and corrupts realized cap permanently.
+// Refusals are loud (error log) but non-fatal: one bad provider row must not
+// wedge the whole price sync.
+const REVISION_WINDOW_DAYS = 5;
+
+export async function upsertPrices(rows, log) {
   if (!rows.length) return;
+  const existing = await pool.query(
+    'SELECT day::text AS day, close_usd FROM prices WHERE day = ANY($1::date[])',
+    [rows.map(r => r.day)]);
+  const stored = new Map(existing.rows.map(r => [r.day, Number(r.close_usd)]));
+  const revisable = dayStr(new Date(Date.now() - REVISION_WINDOW_DAYS * 86400e3));
+
+  const accepted = [];
+  for (const r of rows) {
+    const close = Number(r.close);
+    if (!Number.isFinite(close) || close < 0) {
+      log?.error({ day: r.day, close: r.close }, 'price guard: refusing non-finite/negative close');
+      continue;
+    }
+    const cur = stored.get(r.day);
+    if (cur !== undefined && r.day < revisable && Math.abs(close - cur) > Math.abs(cur) * 1e-9) {
+      log?.error({ day: r.day, stored: cur, incoming: close },
+        'price guard: refusing revision of a finalized close (closes are immutable)');
+      continue;
+    }
+    accepted.push(r);
+  }
+  if (!accepted.length) return;
+
   const values = [];
   const params = [];
-  rows.forEach((r, i) => {
+  accepted.forEach((r, i) => {
     values.push(`($${i * 2 + 1}::date, $${i * 2 + 2}::numeric)`);
     params.push(r.day, r.close);
   });
@@ -83,7 +114,7 @@ export async function syncPrices(log) {
         new Date(cursor + 'T00:00:00Z').getTime() + 2000 * 86400e3,
         new Date(start + 'T00:00:00Z').getTime()) / 1000);
       const rows = (await fetchCryptoCompare(toTs)).filter(x => x.close > 0 && x.day < start);
-      await upsertPrices(rows);
+      await upsertPrices(rows, log);
       const maxDay = rows.reduce((m, x) => (x.day > m ? x.day : m), cursor);
       if (maxDay <= cursor) break;
       cursor = maxDay;
@@ -91,7 +122,7 @@ export async function syncPrices(log) {
     }
     const from = cursor > start ? cursor : start;
     const rows = (await fetchMassive(from, today)).filter(x => x.close > 0);
-    await upsertPrices(rows);
+    await upsertPrices(rows, log);
     log?.info({ from, rows: rows.length }, 'price sync (massive)');
     return;
   }
@@ -101,7 +132,7 @@ export async function syncPrices(log) {
       const start = new Date(cursor + 'T00:00:00Z');
       const end = new Date(Math.min(start.getTime() + 290 * 86400e3, Date.now()));
       const rows = await fetchCoinbase(start.toISOString(), end.toISOString());
-      await upsertPrices(rows);
+      await upsertPrices(rows, log);
       cursor = dayStr(end);
       log?.info({ cursor }, 'price sync (coinbase)');
     }
@@ -111,7 +142,7 @@ export async function syncPrices(log) {
       const toTs = Math.floor(Math.min(
         new Date(cursor + 'T00:00:00Z').getTime() + 2000 * 86400e3, Date.now()) / 1000);
       const rows = (await fetchCryptoCompare(toTs)).filter(x => x.close > 0);
-      await upsertPrices(rows);
+      await upsertPrices(rows, log);
       const maxDay = rows.reduce((m, x) => (x.day > m ? x.day : m), cursor);
       if (maxDay <= cursor) break; // no forward progress => done
       cursor = maxDay;
@@ -126,9 +157,25 @@ export async function priceForDay(day) {
   if (priceCache.has(day)) return priceCache.get(day);
   const r = await pool.query('SELECT close_usd FROM prices WHERE day=$1', [day]);
   if (!r.rows.length) {
-    // Tip block on a brand-new UTC day before the daily candle exists: use last close.
-    const p = await pool.query('SELECT close_usd FROM prices ORDER BY day DESC LIMIT 1');
+    // Tip block on a brand-new UTC day before the daily candle exists: use the
+    // latest close ON OR BEFORE the requested day. At the tip that is
+    // yesterday's close, same as before — but for a mid-history hole it is the
+    // previous day's close instead of the newest close in the table. The old
+    // unbounded form valued all of 2015-08-26 at a 2026 price during the July
+    // 2026 replay (the prices table had exactly one missing day) and poisoned
+    // every downstream cost basis; see assertNoPriceGaps, which now makes a
+    // hole fail loudly instead.
+    const p = await pool.query(
+      'SELECT close_usd FROM prices WHERE day <= $1 ORDER BY day DESC LIMIT 1', [day]);
     const v = p.rows.length ? Number(p.rows[0].close_usd) : 0;
+    // Durable marker: cost bases stamped from this fallback are PROVISIONAL.
+    // Day finalization (metricsDaily.repriceProvisionalDay) re-stamps them
+    // with the true close once it exists, keeping the realized-cap books
+    // exact at the tip. chain_state survives worker restarts, so a mid-day
+    // restart cannot orphan half-provisional stamps.
+    await pool.query(
+      `INSERT INTO chain_state (key, value) VALUES ($1, 1) ON CONFLICT (key) DO NOTHING`,
+      ['provisional:' + day]);
     priceCache.set(day, v);
     return v;
   }
@@ -137,6 +184,51 @@ export async function priceForDay(day) {
   return v;
 }
 export function bustPriceCache() { priceCache.clear(); }
+
+// A hole in the daily series silently corrupts cost bases (every metric keys
+// UTXOs to their creation-day close), so the worker refuses to sync while one
+// exists. Providers have skipped days before (2015-08-26); this turns that
+// class of failure from silent poison into a loud boot error.
+export async function assertNoPriceGaps() {
+  const r = await pool.query(`
+    SELECT d::date::text AS day
+    FROM generate_series((SELECT MIN(day) FROM prices), (SELECT MAX(day) FROM prices), '1 day') d
+    EXCEPT SELECT day::text FROM prices
+    ORDER BY 1 LIMIT 10`);
+  if (r.rows.length) {
+    throw new Error(
+      `prices table has ${r.rows.length}${r.rows.length === 10 ? '+' : ''} missing day(s): ` +
+      r.rows.map(x => x.day).join(', ') +
+      ' — fill them (INSERT INTO prices) before syncing');
+  }
+
+  // A zero/negative close after the first market print is provider garbage,
+  // not economics (only the pre-market zero-fill era is legitimately 0).
+  const z = await pool.query(`
+    SELECT day::text AS day, close_usd FROM prices
+    WHERE close_usd <= 0
+      AND day > (SELECT MIN(day) FROM prices WHERE close_usd > 0)
+    ORDER BY day LIMIT 5`);
+  if (z.rows.length) {
+    throw new Error(`prices table has non-positive close(s) after market start: ` +
+      z.rows.map(x => `${x.day}=${x.close_usd}`).join(', '));
+  }
+
+  // No adjacent-day close has ever legitimately moved 10x; a jump that size is
+  // a mis-dated or corrupt candle. (Both sides must be > 0: the pre-market ->
+  // first-print boundary is exempt by construction.)
+  const j = await pool.query(`
+    SELECT day::text AS day, close_usd, prev FROM (
+      SELECT day, close_usd, LAG(close_usd) OVER (ORDER BY day) AS prev
+      FROM prices) t
+    WHERE close_usd > 0 AND prev > 0
+      AND (close_usd / prev > 10 OR prev / close_usd > 10)
+    ORDER BY day LIMIT 5`);
+  if (j.rows.length) {
+    throw new Error(`prices table has implausible day-over-day jump(s): ` +
+      j.rows.map(x => `${x.day}: ${x.prev} -> ${x.close_usd}`).join(', '));
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Live spot price (Massive last trade), cached briefly in memory. Display-only:

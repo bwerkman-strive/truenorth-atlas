@@ -37,7 +37,8 @@ const block = (height, hash, hour, txs) => ({
 
 before(async () => {
   await migrate();
-  await pool.query('TRUNCATE blocks, block_agg, utxos, prices, metrics_daily, chain_state');
+  await (await import('./guard.js')).assertScratchDb();
+  await pool.query('TRUNCATE blocks, block_agg, utxos, prices, metrics_daily, chain_state, day_active_addresses');
   await pool.query(`INSERT INTO prices (day, close_usd) VALUES ($1, 100)
                     ON CONFLICT (day) DO UPDATE SET close_usd = 100`, [DAY]);
   bustPriceCache();

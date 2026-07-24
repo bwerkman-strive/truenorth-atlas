@@ -49,6 +49,7 @@ const j = async (p, init) => {
 
 before(async () => {
   await migrate();
+  await (await import('./guard.js')).assertScratchDb();
   await pool.query('TRUNCATE metrics_daily, alerts, subscribers, newsletters, email_log, admins');
   await pool.query(`
     INSERT INTO metrics_daily (day, price, mvrv)

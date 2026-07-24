@@ -23,7 +23,7 @@ const { pool, migrate, getState } = await import('../src/db.js');
 const { processBlocks, rollbackAbove, pruneSpent, heightMeta, dayOf, tipHeight } =
   await import('../src/sync.js');
 const { snapshotAndRollupDay } = await import('../src/metricsDaily.js');
-const { bustPriceCache } = await import('../src/prices.js');
+const { bustPriceCache, priceForDay, assertNoPriceGaps } = await import('../src/prices.js');
 
 const SAT = 1e8;
 // Three consecutive UTC days, mid-2024-style timestamps.
@@ -37,39 +37,46 @@ const txidS = 'dd'.repeat(32); // the day-2 spend tx
 const txidE = 'ee'.repeat(32); // day-3 coinbase
 const txidR = 'ff'.repeat(32); // reorg-victim coinbase
 
-const cb = (txid, height, valueBtc) => ({
+const cb = (txid, height, valueBtc, addr) => ({
   txid,
   vin: [{ coinbase: '01' }],
-  vout: [{ n: 0, value: valueBtc, scriptPubKey: { type: 'witness_v0_keyhash' } }],
+  vout: [{ n: 0, value: valueBtc, scriptPubKey: { type: 'witness_v0_keyhash', address: addr } }],
 });
 
 function chain() {
   return [
-    { height: 1, hash: 'h1', time: t(D1, 6), difficulty: 1, weight: 1000, tx: [cb(txidA, 1, 50)] },
+    { height: 1, hash: 'h1', time: t(D1, 6), difficulty: 1, weight: 1000, tx: [cb(txidA, 1, 50, 'addrA')] },
     // h2 deliberately reports no weight: day-1's avg_feerate must stay NULL
     // rather than compute from a partial denominator.
-    { height: 2, hash: 'h2', time: t(D1, 12), difficulty: 1, tx: [cb(txidB, 2, 50)] },
+    { height: 2, hash: 'h2', time: t(D1, 12), difficulty: 1, tx: [cb(txidB, 2, 50, 'addrB')] },
     {
       height: 3, hash: 'h3', time: t(D2, 9), difficulty: 2, weight: 4000, tx: [
-        cb(txidC, 3, 50.001), // 50 BTC subsidy + 0.001 BTC fees claimed
+        cb(txidC, 3, 50.001, 'addrC'), // 50 BTC subsidy + 0.001 BTC fees claimed
         {
           txid: txidS,
-          vin: [{ txid: txidA, vout: 0, prevout: { value: 50, height: 1 } }],
+          vsize: 250, // fee 100,000 sat / 250 vB = 400 sat/vB
+          vin: [{ txid: txidA, vout: 0, prevout: {
+            value: 50, height: 1, generated: true, // spends a coinbase output
+            scriptPubKey: { address: 'addrA' },
+          } }],
           vout: [
-            { n: 0, value: 30, scriptPubKey: { type: 'witness_v0_keyhash' } },
-            { n: 1, value: 19.999, scriptPubKey: { type: 'witness_v0_keyhash' } },
+            { n: 0, value: 30, scriptPubKey: { type: 'witness_v0_keyhash', address: 'addrD' } },
+            { n: 1, value: 19.999, scriptPubKey: { type: 'witness_v0_keyhash', address: 'addrF' } },
+            // 6-byte OP_RETURN payload script (6a 04 de ad be ef)
+            { n: 2, value: 0, scriptPubKey: { type: 'nulldata', hex: '6a04deadbeef' } },
           ],
         },
       ],
     },
-    { height: 4, hash: 'h4', time: t(D3, 3), difficulty: 2, tx: [cb(txidE, 4, 50)] },
+    { height: 4, hash: 'h4', time: t(D3, 3), difficulty: 2, tx: [cb(txidE, 4, 50, 'addrE')] },
   ];
 }
 
 before(async () => {
   await migrate();
   // Clean slate (idempotent re-runs).
-  await pool.query(`TRUNCATE blocks, block_agg, utxos, prices, metrics_daily, chain_state`);
+  await (await import('./guard.js')).assertScratchDb();
+  await pool.query(`TRUNCATE blocks, block_agg, utxos, prices, metrics_daily, chain_state, day_active_addresses`);
   await pool.query(
     `INSERT INTO prices (day, close_usd) VALUES ($1,100),($2,200),($3,150)`, [D1, D2, D3]);
   bustPriceCache();
@@ -285,6 +292,103 @@ test('capacity metrics: block fullness and annualized issuance rate', async () =
   assert.ok(Math.abs(Number(rb.issuance_rate) - 50 * 365 / 150) < 1e-9, 'backfill restores issuance');
 });
 
+test('bundle block deltas: OP_RETURN, miner outflow, spend-age bands, feerate histogram', async () => {
+  const agg = (await pool.query('SELECT * FROM block_agg WHERE height=3')).rows[0];
+
+  // txidS carries one 6-byte OP_RETURN, so its whole 100,000-sat fee attributes.
+  assert.equal(Number(agg.op_return_fees_sat), 100_000);
+  assert.equal(Number(agg.op_return_count), 1);
+  assert.equal(Number(agg.op_return_bytes), 6);
+
+  // txidS spends the height-1 coinbase (prevout.generated): 50 BTC of miner outflow.
+  assert.equal(Number(agg.miner_outflow_sat), 50 * SAT);
+
+  // The spent coins were 1.125 days old: all 50 BTC land in the 1d–1w band.
+  assert.deepEqual(agg.spent_age_bands, { '1d–1w': 50 });
+
+  // 100,000 sat / 250 vB = 400 sat/vB -> bucket 20 (the 300–500 bucket).
+  assert.deepEqual(agg.feerate_hist, { 20: 1 });
+
+  // Fee-less day-1 coinbase blocks carry empty deltas.
+  const agg1 = (await pool.query('SELECT * FROM block_agg WHERE height=1')).rows[0];
+  assert.equal(Number(agg1.op_return_fees_sat), 0);
+  assert.equal(Number(agg1.miner_outflow_sat), 0);
+  assert.equal(agg1.spent_age_bands, null);
+  assert.equal(agg1.feerate_hist, null);
+});
+
+test('bundle day rollup: activity, unrealized P&L, miner supply, cohorts, medians', async () => {
+  const r1 = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D1])).rows[0];
+  const r2 = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D2])).rows[0];
+
+  // Day 1: two coinbase receivers (addrA, addrB); nothing spent, no fees.
+  assert.equal(Number(r1.active_addresses), 2);
+  assert.equal(Number(r1.op_return_fees_usd), 0);
+  assert.equal(r1.median_feerate, null, 'no non-coinbase txs -> no median');
+  assert.equal(r1.spent_age_bands, null);
+  assert.equal(Number(r1.revived_supply_1y), 0);
+  assert.equal(Number(r1.miner_outflow_btc), 0);
+  // Both coins created at the $100 close: zero unrealized P&L either way.
+  assert.equal(Number(r1.unrealized_profit_usd), 0);
+  assert.equal(Number(r1.unrealized_loss_usd), 0);
+  assert.equal(Number(r1.miner_unmoved_supply), 100);
+  assert.equal(Number(r1.wholecoiner_count), 2);
+  assert.ok(Math.abs(Number(r1.balance_bands['10–100']) - 1) < 1e-9, 'all supply in the 10–100 band');
+  // URPD at D1: 100 BTC in the p=99 bucket (top $100, width $1) -> 99.5 interpolated.
+  assert.ok(Math.abs(Number(r1.median_cost_basis) - 99.5) < 1e-9, `median=${r1.median_cost_basis}`);
+
+  // Day 2: addrC (coinbase), addrA (sender), addrD + addrF (receivers) = 4.
+  assert.equal(Number(r2.active_addresses), 4);
+  // 0.001 BTC of OP_RETURN-tx fees at the $200 close.
+  assert.ok(Math.abs(Number(r2.op_return_fees_usd) - 0.2) < 1e-9);
+  // One tx at 400 sat/vB -> median is its bucket midpoint, (300+500)/2.
+  assert.equal(Number(r2.median_feerate), 400);
+  assert.ok(Math.abs(Number(r2.spent_age_bands['1d–1w']) - 1) < 1e-9, 'all spent volume aged 1d–1w');
+  assert.equal(Number(r2.revived_supply_1y), 0);
+  assert.equal(Number(r2.miner_outflow_btc), 50);
+  // Held 50 BTC with a $100 basis at $200 spot; today's coins sit at basis.
+  assert.equal(Number(r2.unrealized_profit_usd), 5_000);
+  assert.equal(Number(r2.unrealized_loss_usd), 0);
+  // Live coinbase outputs: txidB (50) + txidC (50.001); txidA was spent.
+  assert.ok(Math.abs(Number(r2.miner_unmoved_supply) - 100.001) < 1e-9);
+  // addrB 50, addrC 50.001, addrD 30, addrF 19.999: all four are wholecoiners
+  // and all sit in the 10–100 band.
+  assert.equal(Number(r2.wholecoiner_count), 4);
+  assert.ok(Math.abs(Number(r2.balance_bands['10–100']) - 1) < 1e-9);
+  // URPD at D2 (top $200, width $2): 50 BTC at p=100, 100 BTC at p=198;
+  // the 75-BTC midpoint interpolates to 198 + 2 x 25/100 = 198.5.
+  assert.ok(Math.abs(Number(r2.median_cost_basis) - 198.5) < 1e-9, `median=${r2.median_cost_basis}`);
+
+  // Staging rows are consumed by finalization.
+  const staged = (await pool.query(
+    'SELECT COUNT(*)::int c FROM day_active_addresses WHERE day <= $1', [D2])).rows[0].c;
+  assert.equal(staged, 0, 'finalized days leave no staging rows behind');
+});
+
+// The 2015-08-26 incident: one missing day in prices made priceForDay fall
+// back to the NEWEST close in the table, valuing 2015 blocks at a 2026 price.
+// Three defenses now exist; all must hold.
+test('price-gap defenses: bounded fallback, gap assertion, finalization refusal', async () => {
+  await assertNoPriceGaps(); // D1..D3 is contiguous
+
+  await pool.query('DELETE FROM prices WHERE day=$1', [D2]);
+  bustPriceCache();
+
+  // 1. A mid-history hole resolves to the PREVIOUS day's close, never a later one.
+  assert.equal(await priceForDay(D2), 100);
+
+  // 2. The worker's boot/refresh check refuses to run over a hole.
+  await assert.rejects(assertNoPriceGaps(), /missing day/);
+
+  // 3. Day finalization refuses outright rather than writing price-0 metrics.
+  //    (D4 is unfinalized, so it reaches the price check.)
+  await assert.rejects(
+    snapshotAndRollupDay('2024-06-04', { info: () => {} }), /prices table has a gap/);
+
+  await pool.query('INSERT INTO prices (day, close_usd) VALUES ($1, 200)', [D2]);
+  bustPriceCache();
+});
+
 test('cohort supply in profit: STH breadth from the snapshot, LTH undefined pre-cohort', async () => {
   const r1 = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D1])).rows[0];
   const r2 = (await pool.query('SELECT * FROM metrics_daily WHERE day=$1', [D2])).rows[0];
@@ -371,17 +475,27 @@ test('reorg: rollbackAbove restores every counter and the UTXO set exactly', asy
   const unspentBefore = (await pool.query(
     'SELECT COUNT(*)::int c FROM utxos WHERE spent_height IS NULL')).rows[0].c;
 
+  // Day-3 staging so far: addrE alone (the h4 coinbase receiver).
+  const stagedBefore = (await pool.query(
+    "SELECT COUNT(*)::int c FROM day_active_addresses WHERE day=$1", [D3])).rows[0].c;
+  assert.equal(stagedBefore, 1);
+
   // A competing block 5 arrives, gets processed... and is then orphaned.
   await processBlocks([{
     height: 5, hash: 'h5-orphan', time: t(D3, 6), difficulty: 2, tx: [
-      cb(txidR, 5, 50),
+      cb(txidR, 5, 50, 'addrR'),
       { // spends the held day-1 coinbase at a loss vs its $200... no wait, $150 spot vs $100 basis
         txid: '99'.repeat(32),
-        vin: [{ txid: txidB, vout: 0, prevout: { value: 50, height: 2 } }],
-        vout: [{ n: 0, value: 49.9995, scriptPubKey: { type: 'witness_v0_keyhash' } }],
+        vin: [{ txid: txidB, vout: 0, prevout: {
+          value: 50, height: 2, generated: true, scriptPubKey: { address: 'addrB' },
+        } }],
+        vout: [{ n: 0, value: 49.9995, scriptPubKey: { type: 'witness_v0_keyhash', address: 'addrG' } }],
       },
     ],
   }]);
+  assert.equal((await pool.query(
+    "SELECT COUNT(*)::int c FROM day_active_addresses WHERE day=$1", [D3])).rows[0].c, 4,
+    'orphan block staged addrR, addrB, addrG alongside addrE');
   assert.equal(await tipHeight(), 5);
   assert.notEqual(await getState(pool, 'realized_cap_usd'), rcBefore);
   const spentByOrphan = await pool.query(
@@ -410,6 +524,11 @@ test('reorg: rollbackAbove restores every counter and the UTXO set exactly', asy
   const b = await pool.query('SELECT spent_height, spent_txid FROM utxos WHERE txid=$1', [Buffer.from(txidB, 'hex')]);
   assert.equal(b.rows[0].spent_height, null, 'txidB is live again');
   assert.equal(b.rows[0].spent_txid, null, 'spend attribution rolled back with it');
+
+  const stagedAfter = (await pool.query(
+    "SELECT address FROM day_active_addresses WHERE day=$1 ORDER BY address", [D3])).rows;
+  assert.deepEqual(stagedAfter.map(r => r.address), ['addrE'],
+    'addresses first seen only in the orphaned block are gone; addrE (h4) survives');
 
   const orphan = await pool.query('SELECT 1 FROM utxos WHERE txid=$1', [Buffer.from(txidR, 'hex')]);
   assert.equal(orphan.rows.length, 0, 'orphan coinbase removed');
