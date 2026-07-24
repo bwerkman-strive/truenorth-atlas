@@ -162,6 +162,8 @@ CREATE TABLE IF NOT EXISTS metrics_daily (
   hashprice_usd_ph   NUMERIC,      -- USD earned per PH/s per day (miner revenue / hashrate)
   fees_usd           NUMERIC,      -- total transaction fees per day, valued at the close
   avg_feerate        NUMERIC,      -- sat/vB; day fees / day vsize (NULL if any block lacks weight)
+  block_fullness_pct NUMERIC,      -- 0..1; day weight / (blocks x 4M limit); NULL if any block lacks weight
+  issuance_rate      NUMERIC,      -- annualized; day subsidy x 365 / circulating supply
   supply_1y_plus_pct NUMERIC,      -- 0..1, share of supply dormant >= 1y
   sth_profit_pct     NUMERIC,      -- 0..1, share of STH supply in profit
   lth_profit_pct     NUMERIC,      -- 0..1, share of LTH supply in profit
@@ -186,6 +188,8 @@ ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS urpd JSONB;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS hashprice_usd_ph NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS fees_usd NUMERIC;
 ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS avg_feerate NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS block_fullness_pct NUMERIC;
+ALTER TABLE metrics_daily ADD COLUMN IF NOT EXISTS issuance_rate NUMERIC;
 
 -- Backfill hashprice for days finalized before the column existed. Pure
 -- derivation of two already-populated columns, so this is a no-op once filled
@@ -210,6 +214,22 @@ FROM (SELECT day,
       FROM blocks GROUP BY day) b
 JOIN prices p ON p.day = b.day
 WHERE b.day = m.day AND m.fees_usd IS NULL;
+
+-- Backfill block fullness and annualized issuance the same way: fullness from
+-- blocks alone (NULL unless every block that day has a weight), issuance from
+-- the day's claimed subsidy against the end-of-day supply already recorded on
+-- the row. Gated on issuance_rate IS NULL so it is a no-op once filled.
+UPDATE metrics_daily m
+SET block_fullness_pct = CASE WHEN b.wt > 0 AND b.n > 0 THEN b.wt / (b.n * 4e6) END,
+    issuance_rate      = CASE WHEN m.circulating_supply > 0
+                              THEN b.subsidy_btc * 365 / m.circulating_supply END
+FROM (SELECT day,
+             COUNT(*)::numeric                                      AS n,
+             SUM(subsidy_sat)::numeric / 1e8                        AS subsidy_btc,
+             CASE WHEN COUNT(*) = COUNT(weight)
+                  THEN SUM(weight)::numeric END                     AS wt
+      FROM blocks GROUP BY day) b
+WHERE b.day = m.day AND m.issuance_rate IS NULL;
 
 -- Seed persistent counters
 INSERT INTO chain_state(key, value) VALUES
