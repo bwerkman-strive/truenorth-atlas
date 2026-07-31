@@ -49,6 +49,7 @@ server/src/
   prices.js        daily closes (Massive canonical 2015->, CryptoCompare 2010–2015 backfill,
                    pre-market zero-fill) + getSpot() live price (Massive last-trade, cached)
   catalog.js       SINGLE SOURCE OF TRUTH for metrics (slug/column/zones/copy)
+  metricCopy.js    admin-editable overrides for catalog explain/method prose (merged by /api/catalog)
   api.js           read API, /api/status, /api/series, /api/cycles, /api/spot, mounts
   explorer.js      block/tx/address lookups (DB-first, RPC-enriched), search, rate limiter
   keys.js          root/admin auth (adminAuth middleware), API-key CRUD, requireApiKey for /v1
