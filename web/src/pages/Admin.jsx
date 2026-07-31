@@ -1,7 +1,8 @@
-// Admin panel (#/admin). Five tabs:
+// Admin panel (#/admin). Six tabs:
 //   API Keys      — create / list / revoke private-API keys
 //   Admins        — root only: mint / revoke per-person admin tokens
 //   Newsletter    — compose, test-send, schedule
+//   Metric Copy   — edit the two prose panes on each metric page
 //   Email Log     — immutable audit trail of every send attempt
 //   API Reference — how to authenticate, every endpoint, example output
 //
@@ -211,6 +212,108 @@ function AdminsTab({ token, isRoot }) {
 }
 
 // ---------------------------------------------------------------------------
+function MetricCopyTab({ token }) {
+  const [metrics, setMetrics] = useState(null);
+  const [err, setErr] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [editing, setEditing] = useState(null); // one metric row, copied for the editor
+  const [busy, setBusy] = useState(false);
+
+  const refresh = async () => {
+    try { setErr(null); setMetrics((await api.admin.metricCopy(token)).metrics); }
+    catch (e) { setErr(e.message); }
+  };
+  useEffect(() => { refresh(); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const save = async () => {
+    if (busy) return;
+    setBusy(true); setErr(null);
+    try {
+      await api.admin.saveMetricCopy(token, editing.slug, {
+        explain: editing.explain, method: editing.method,
+      });
+      setNotice(`Saved "${editing.name}". The live site picks it up within about 5 minutes (API cache).`);
+      setEditing(null);
+      await refresh();
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const reset = async () => {
+    if (!window.confirm(`Restore the built-in text for "${editing.name}"? Your edits to both sections are discarded immediately.`)) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await api.admin.resetMetricCopy(token, editing.slug);
+      setEditing({ ...editing, explain: r.explain, method: r.method, overridden: false });
+      await refresh();
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  if (editing) {
+    return (
+      <>
+        {err && <div className="err">{err}</div>}
+        <div className="nl-composer">
+          <div className="xmeta" style={{ paddingBottom: 4 }}>
+            <strong style={{ color: 'var(--bone)' }}>{editing.name}</strong> · {editing.slug}
+            {editing.overridden ? ' · edited' : ' · built-in text'}
+          </div>
+          <label>What it tells you
+            <textarea rows={6} value={editing.explain}
+              onChange={(e) => setEditing({ ...editing, explain: e.target.value })} />
+          </label>
+          <label>How it's computed
+            <textarea rows={6} value={editing.method}
+              onChange={(e) => setEditing({ ...editing, method: e.target.value })} />
+          </label>
+          <div className="nl-actions">
+            <button className="nl-save" onClick={save}
+              disabled={busy || !editing.explain.trim() || !editing.method.trim()}>
+              {busy ? '…' : 'Save'}
+            </button>
+            {editing.overridden && (
+              <button className="xrevoke" onClick={reset} disabled={busy}>Restore default</button>
+            )}
+            <button className="xdismiss" onClick={() => setEditing(null)}>Back</button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="syncnote">
+        The prose on each metric page: "What it tells you" and "How it's computed". Edits here
+        override the built-in text (and reach the live site within about 5 minutes); restoring
+        the default brings the built-in copy back.
+      </div>
+      {err && <div className="err">{err}</div>}
+      {notice && <div className="syncnote">{notice}</div>}
+      {metrics && (
+        <div className="xcard">
+          {metrics.map(m => (
+            <div className="xrow" key={m.slug}>
+              <div className="xval">
+                <span>
+                  <strong>{m.name}</strong>{' '}
+                  {m.overridden && <em className="xunspent">edited</em>}
+                  <span className="xmeta"> · {m.category}
+                    {m.overridden && m.updated_at ? ` · by ${m.updated_by ?? '—'} ${when(m.updated_at)}` : ''}</span>
+                </span>
+                <button className="xrevoke" style={{ color: 'var(--cold)' }}
+                  onClick={() => { setNotice(null); setEditing({ ...m }); }}>Edit</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 function EmailLogTab({ token }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -370,6 +473,7 @@ export default function Admin() {
         <button className={tab === 'keys' ? 'on' : ''} onClick={() => setTab('keys')}>API Keys</button>
         <button className={tab === 'admins' ? 'on' : ''} onClick={() => setTab('admins')}>Admins</button>
         <button className={tab === 'newsletter' ? 'on' : ''} onClick={() => setTab('newsletter')}>Newsletter</button>
+        <button className={tab === 'copy' ? 'on' : ''} onClick={() => setTab('copy')}>Metric Copy</button>
         <button className={tab === 'emaillog' ? 'on' : ''} onClick={() => setTab('emaillog')}>Email Log</button>
         <button className={tab === 'api' ? 'on' : ''} onClick={() => setTab('api')}>API Reference</button>
         <button className="xlock" onClick={() => { setToken(''); setEntered(''); setWho(null); }}>Lock</button>
@@ -377,6 +481,7 @@ export default function Admin() {
       {tab === 'keys' ? <KeysTab token={token} />
         : tab === 'admins' ? <AdminsTab token={token} isRoot={!!who?.root} />
         : tab === 'newsletter' ? <NewsletterTab token={token} catalog={catalog} />
+        : tab === 'copy' ? <MetricCopyTab token={token} />
         : tab === 'emaillog' ? <EmailLogTab token={token} />
         : <ApiTab />}
     </div>

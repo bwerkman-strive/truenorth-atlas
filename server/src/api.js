@@ -18,6 +18,7 @@ import { adminRouter, requireApiKey } from './keys.js';
 import { ogRouter } from './og.js';
 import { alertsRouter, startAlertChecker } from './alerts.js';
 import { subscribeRouter, newslettersAdminRouter, emailLogRouter, processNewsletters } from './newsletters.js';
+import { getCopyOverrides, metricCopyAdminRouter } from './metricCopy.js';
 import { getSpot } from './prices.js';
 
 const log = pino({ level: process.env.LOG_LEVEL || 'info' });
@@ -49,6 +50,8 @@ app.use('/api/alerts', alertsRouter(publicRateLimit));
 app.use('/api/subscribe', subscribeRouter(publicRateLimit));
 app.use('/api/admin/newsletters', newslettersAdminRouter());
 app.use('/api/admin/email-log', emailLogRouter());
+// ---- Metric copy overrides (admin): edits the two metric-detail prose panes ---
+app.use('/api/admin/metric-copy', metricCopyAdminRouter());
 
 // ---- Halving-cycle overlays ---------------------------------------------------
 // GET /api/cycles/:slug -> the metric re-based to days-since-halving, one
@@ -150,12 +153,19 @@ app.get('/api/status', async (_req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/catalog', (_req, res) => {
+app.get('/api/catalog', async (_req, res) => {
+  // Admin copy overrides layer over the catalog defaults; catalog.js stays
+  // the source of truth for everything else.
+  let copy = {};
+  try { copy = await getCopyOverrides(); }
+  catch (e) { return res.status(500).json({ error: e.message }); }
   cache(res);
   res.json({
     categories: CATEGORIES,
     metrics: METRICS.map(({ slug, name, category, format, unit, short, explain, method, zones, kind, logDefault, unitToggle, projection, column, columns }) => ({
-      slug, name, category, format, unit, short, explain, method,
+      slug, name, category, format, unit, short,
+      explain: copy[slug]?.explain ?? explain,
+      method: copy[slug]?.method ?? method,
       zones: zones ?? [], kind: kind ?? 'line',
       // The series /api/series/:slug returns; lets the UI know when price is
       // already part of the chart (no overlay toggle) without a second flag.

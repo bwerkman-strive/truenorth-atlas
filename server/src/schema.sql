@@ -378,3 +378,14 @@ CREATE TABLE IF NOT EXISTS newsletters (
   sent_count    INTEGER NOT NULL DEFAULT 0,
   failed_count  INTEGER NOT NULL DEFAULT 0
 );
+
+-- Admin-editable metric copy: per-slug overrides for the catalog's explain
+-- ("What it tells you") and method ("How it's computed") prose. NULL column
+-- = use the catalog default; /api/catalog merges these over catalog.js.
+CREATE TABLE IF NOT EXISTS metric_copy (
+  slug          TEXT PRIMARY KEY,
+  explain_text  TEXT,
+  method_text   TEXT,
+  updated_by    TEXT NOT NULL,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
