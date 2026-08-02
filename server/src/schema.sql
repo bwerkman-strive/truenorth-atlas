@@ -37,8 +37,13 @@ CREATE TABLE IF NOT EXISTS utxos (
 -- Explorer: current balance / UTXO listing per address.
 -- (ALTER ... IF NOT EXISTS migrates databases created before the explorer existed.)
 ALTER TABLE utxos ADD COLUMN IF NOT EXISTS address TEXT;
-CREATE INDEX IF NOT EXISTS utxos_address_live
-  ON utxos (address) WHERE spent_height IS NULL AND address IS NOT NULL;
+-- utxos_address_live is PAUSED for the replay along with the cold indexes
+-- below: it is write-amplified on every UTXO insert AND every spend (the
+-- partial predicate covers spent_height, so spends can never be HOT
+-- updates), while mid-replay almost nothing reads it. Explorer address
+-- lookups fall back to seq scans until tip.
+-- CREATE INDEX IF NOT EXISTS utxos_address_live
+--   ON utxos (address) WHERE spent_height IS NULL AND address IS NOT NULL;
 -- Explorer: block size/weight on summaries (recorded going forward, lazily
 -- backfilled from RPC on view for blocks synced before these columns), and
 -- spend attribution so spent outputs link to their spending tx within the
@@ -48,13 +53,14 @@ ALTER TABLE blocks ADD COLUMN IF NOT EXISTS size_bytes INTEGER;
 ALTER TABLE blocks ADD COLUMN IF NOT EXISTS weight INTEGER;
 ALTER TABLE utxos ADD COLUMN IF NOT EXISTS spent_txid BYTEA;
 -- Partial index over the live UTXO set: powers supply-in-profit, HODL waves, cohorts.
--- TEMPORARILY DISABLED while the 2026-07 full-chain replay runs. These three
--- indexes are read only by the once-per-day snapshot but evict the hot
--- utxos_pkey from shared_buffers, slowing ingestion ~6x, and because
--- migrate() re-runs this file on every api/worker start, leaving them here
--- resurrects them (with a table-locking plain CREATE INDEX) on every deploy.
--- When the replay reaches tip: build them by hand with CREATE INDEX
--- CONCURRENTLY (same definitions), then uncomment these statements.
+-- TEMPORARILY DISABLED while the 2026-07 full-chain replay runs. These
+-- indexes (utxos_address_live above included) are barely read mid-replay but
+-- evict the hot utxos_pkey from cache (measured ~6x ingestion slowdown,
+-- July 2026), and because migrate() re-runs this file on every api/worker
+-- start, leaving them here resurrects them (with a table-locking plain
+-- CREATE INDEX) on every deploy. When the replay reaches tip: build all
+-- FOUR by hand with CREATE INDEX CONCURRENTLY (same definitions), then
+-- uncomment the statements.
 -- CREATE INDEX IF NOT EXISTS utxos_unspent_price_idx
 --   ON utxos (created_price) INCLUDE (value_sat, created_time) WHERE spent_height IS NULL;
 -- CREATE INDEX IF NOT EXISTS utxos_unspent_time_idx
