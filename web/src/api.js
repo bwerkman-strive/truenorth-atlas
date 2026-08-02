@@ -72,6 +72,6 @@ export const api = {
 
 // Formatters live in a pure module so they are unit-testable; re-exported
 // here to keep existing import sites (`import { fmt } from '../api.js'`) working.
-export { fmt, compact, fmtDay } from './format.js';
+export { fmt, compact, fmtDay, axisTick } from './format.js';
 
 export const isEmbed = new URLSearchParams(window.location.search).get('embed') === '1';

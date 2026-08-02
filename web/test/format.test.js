@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fmt, compact, fmtDay } from '../src/format.js';
+import { fmt, compact, fmtDay, axisTick } from '../src/format.js';
 
 test('null/undefined/NaN render as em-dash (pre-sync state)', () => {
   assert.equal(fmt(null, 'usd'), '—');
@@ -56,6 +56,24 @@ test('compact edge behavior', () => {
   assert.equal(compact(-3_200_000), '-3.20M');
   assert.equal(compact(999), '999');
   assert.equal(compact(1000), '1.0K');
+});
+
+test('axisTick honors the display format on chart axes', () => {
+  assert.equal(axisTick(0.8, 'percent'), '80%');       // supply in profit: not "0.80"
+  assert.equal(axisTick(1, 'percent'), '100%');
+  assert.equal(axisTick(0.017, 'percent'), '1.70%');   // issuance rate scale
+  assert.equal(axisTick(64000, 'usd'), '$64.0K');
+  assert.equal(axisTick(1_260_000_000_000, 'usd_compact'), '$1.26T');
+  assert.equal(axisTick(2.4567, 'ratio'), '2.46');
+  assert.equal(axisTick(912.3, 'number'), '912');
+});
+
+test('axisTick coerces API strings and blanks non-numeric input', () => {
+  assert.equal(axisTick('0.5', 'percent'), '50%');
+  assert.equal(axisTick(null, 'ratio'), '');
+  assert.equal(axisTick(undefined, 'percent'), '');
+  assert.equal(axisTick('', 'usd'), '');
+  assert.equal(axisTick('not-a-number', 'usd'), '');
 });
 
 test('fmtDay renders ISO days as MM/DD/YYYY', () => {

@@ -19,6 +19,21 @@ export function fmt(value, format, unit) {
   }
 }
 
+// Axis tick labels honor the metric's display format: a percent metric's axis
+// reads 80%, not 0.80, and dollar metrics keep their $. Terser than fmt(),
+// which is for headline values; axes want compact magnitudes.
+export function axisTick(value, format) {
+  if (value === null || value === undefined || value === '') return '';
+  const v = Number(value);
+  if (Number.isNaN(v)) return '';
+  switch (format) {
+    case 'percent': return compact(v * 100) + '%';
+    case 'usd':
+    case 'usd_compact': return '$' + compact(v);
+    default: return compact(v);
+  }
+}
+
 export function compact(value) {
   const v = Number(value);
   const a = Math.abs(v);

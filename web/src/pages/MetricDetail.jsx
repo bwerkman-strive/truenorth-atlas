@@ -3,7 +3,7 @@ import {
   ResponsiveContainer, ComposedChart, Line, Area, AreaChart, Bar, BarChart, Cell,
   XAxis, YAxis, Tooltip, ReferenceArea, ReferenceLine, CartesianGrid,
 } from 'recharts';
-import { api, fmt, compact, fmtDay } from '../api.js';
+import { api, fmt, compact, fmtDay, axisTick } from '../api.js';
 import { smaByDay } from '../sma.js';
 import { chartToPngBlob } from '../chartImage.js';
 import AlertForm from '../components/AlertForm.jsx';
@@ -414,7 +414,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                 <XAxis dataKey="d" type="number" domain={[0, 'dataMax']}
                   tickFormatter={(d) => d + 'd'} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} />
                 <YAxis scale={logScale ? 'log' : 'linear'} domain={['auto', 'auto']} allowDataOverflow
-                  tick={{ fill: 'var(--text-faint)', fontSize: 11 }} tickFormatter={(v) => compact(v)} width={64} />
+                  tick={{ fill: 'var(--text-faint)', fontSize: 11 }} tickFormatter={(v) => axisTick(v, metric.format)} width={64} />
                 <Tooltip {...TOOLTIP_PROPS}
                   labelFormatter={(d) => `Day ${d} of epoch`}
                   formatter={(v, n) => [fmt(Number(v), metric.format, displayUnit), n.replace('epoch', 'Epoch ')]} />
@@ -494,7 +494,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                 : <XAxis dataKey="day" tickFormatter={fmtDay} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={60} />}
               <YAxis yAxisId="m" scale={logScale ? 'log' : 'linear'} domain={['auto', 'auto']}
                 allowDataOverflow tick={{ fill: 'var(--text-faint)', fontSize: 11 }}
-                tickFormatter={(v) => compact(v)} width={64} />
+                tickFormatter={(v) => axisTick(v, metric.format)} width={64} />
               {showPrice && canOverlayPrice && (
                 <YAxis yAxisId="p" orientation="right" scale="log" domain={['auto', 'auto']}
                   allowDataOverflow tick={{ fill: 'var(--btc)', fontSize: 11, opacity: 0.7 }}
@@ -557,7 +557,8 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
               {metric.zones.filter(z => z.tone !== 'line').map((z, i) => (
                 <div key={i} className="zk">
                   <i style={{ background: z.tone === 'hot' ? 'var(--hot)' : z.tone === 'warm' ? '#f7b34a' : 'var(--cold)', opacity: 0.7 }} />
-                  {z.label} ({z.from}–{z.to})
+                  {z.label} ({metric.format === 'percent'
+                    ? `${axisTick(z.from, 'percent')}–${axisTick(z.to, 'percent')}` : `${z.from}–${z.to}`})
                 </div>
               ))}
             </div>
