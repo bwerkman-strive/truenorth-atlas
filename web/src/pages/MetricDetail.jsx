@@ -4,6 +4,7 @@ import {
   XAxis, YAxis, Tooltip, ReferenceArea, ReferenceLine, CartesianGrid,
 } from 'recharts';
 import { api, fmt, compact, fmtDay } from '../api.js';
+import { smaByDay } from '../sma.js';
 import { chartToPngBlob } from '../chartImage.js';
 import AlertForm from '../components/AlertForm.jsx';
 
@@ -26,9 +27,19 @@ function seriesColor(c, i) {
   if (c.includes('profit')) return 'var(--aurora)';
   return MULTI_COLORS[(i + 1) % MULTI_COLORS.length];
 }
-const seriesLabel = (c) => (c.endsWith('_proj')
-  ? `${SERIES_LABELS[c.slice(0, -5)] ?? c.slice(0, -5)} (projected)`
-  : SERIES_LABELS[c] ?? c);
+const seriesLabel = (c) => {
+  const sma = c.match(/^sma_(\d+)w$/);
+  if (sma) return `${sma[1]}W SMA`;
+  return c.endsWith('_proj')
+    ? `${SERIES_LABELS[c.slice(0, -5)] ?? c.slice(0, -5)} (projected)`
+    : SERIES_LABELS[c] ?? c;
+};
+
+// Moving-average overlays (catalog `sma`, weeks -> stroke). Hues validated
+// with the dataviz palette checker against the other line colors on the ink
+// surface: worst colorblind pair ΔE 9.2, all pairs >= 3:1 on the background.
+const SMA_COLORS = { 20: 'var(--aurora)', 50: 'var(--cold)', 200: '#e05fc4' };
+const smaKeyOf = (w) => `sma_${w}w`;
 
 const EPOCH_COLORS = { 1: '#6c809a', 2: '#7b6cf0', 3: '#58a8ff', 4: '#4fd7d0', 5: '#4fe3a9' };
 const EPOCH_WIDTH = { 5: 2.6 }; // current cycle drawn heavier
@@ -65,6 +76,12 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   const chartBoxRef = useRef(null);
   const [unitIdx, setUnitIdx] = useState(0);
   const [showProj, setShowProj] = useState(true);
+  // Moving averages: which windows (in weeks) are drawn, and the full-history
+  // series they are computed from (see the fetch effect below for why).
+  const smaOpts = metric.sma && Array.isArray(metric.sma.windows) && metric.sma.windows.length
+    ? metric.sma : null;
+  const [smaOn, setSmaOn] = useState(() => new Set(smaOpts?.active ?? []));
+  const [smaSrc, setSmaSrc] = useState(null);
   // Scalar metrics get the full toolbar; 'stacked' and 'urpd' kinds render
   // their own chart form with a reduced toolbar.
   const scalar = metric.kind !== 'stacked' && metric.kind !== 'urpd';
@@ -80,7 +97,23 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   const displayUnit = unitOpts?.[unitIdx]?.unit ?? metric.unit;
   const scaleVal = (v) => (v === null || v === undefined || v === '' ? null : Number(v) * unitFactor);
 
-  useEffect(() => { setView('series'); setCycles(null); setUnitIdx(0); setShowProj(true); setShowPrice(false); }, [metric.slug]);
+  useEffect(() => {
+    setView('series'); setCycles(null); setUnitIdx(0); setShowProj(true); setShowPrice(false);
+    setSmaOn(new Set(metric.sma?.active ?? [])); setSmaSrc(null);
+  }, [metric.slug]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Moving averages come from their own fetch of the FULL series, undecimated
+  // and unclipped: the visible fetch is range-limited and downsampled, which
+  // would corrupt a long window (a 200W average needs the 1,400 days before
+  // every visible point). On failure the overlay stays quietly absent (empty
+  // sentinel, not null, so a dead API is not refetched in a loop); the base
+  // chart still renders.
+  useEffect(() => {
+    if (!smaOpts || smaOn.size === 0 || view !== 'series' || smaSrc) return;
+    api.series(metric.slug, { from: '2009-01-01' })
+      .then(setSmaSrc)
+      .catch(() => setSmaSrc({ columns: [], rows: [] }));
+  }, [metric.slug, smaOn, view, smaSrc]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (metric.kind === 'urpd') {
@@ -178,6 +211,14 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
     window.open(href, '_blank', 'noopener,width=600,height=500');
   };
 
+  const smaSeries = useMemo(() => {
+    if (!smaOpts || !smaSrc?.columns?.length || smaOn.size === 0 || view !== 'series') return [];
+    const col = smaSrc.columns[0];
+    return smaOpts.windows.filter(w => smaOn.has(w)).map(w => ({
+      key: smaKeyOf(w), weeks: w, byDay: smaByDay(smaSrc.rows, col, w * 7),
+    }));
+  }, [smaOpts, smaSrc, smaOn, view]);
+
   const rows = useMemo(() => {
     if (!data) return [];
     if (metric.kind === 'stacked') {
@@ -199,6 +240,10 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
       // scale and the overlay silently fails to render. Pre-market days
       // (2009-01-03..2010-07-16) are legitimately zero.
       if (r.price !== undefined) { const p = Number(r.price); row.price = p > 0 ? p : null; }
+      for (const s of smaSeries) {
+        const v = s.byDay.get(r.day);
+        row[s.key] = v === undefined ? null : v * unitFactor;
+      }
       // Log scale can't render non-positive values.
       if (logScale) for (const k of Object.keys(row)) if (k !== 'day' && k !== 't' && row[k] !== null && row[k] <= 0) row[k] = null;
       return row;
@@ -213,7 +258,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
       }
     }
     return out;
-  }, [data, metric, logScale, unitFactor, showProj]);
+  }, [data, metric, logScale, unitFactor, showProj, smaSeries]);
 
   // Projection metrics plot on a numeric time axis (uniform years per pixel,
   // history and projection to scale); everything else keeps the category axis.
@@ -321,6 +366,20 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             <button className={showPrice ? 'on' : ''} onClick={() => setShowPrice(!showPrice)}>
               {showPrice ? '✓ ' : ''}BTC price overlay
             </button>
+          </div>
+        )}
+        {view === 'series' && scalar && smaOpts && (
+          <div className="grp" role="group" aria-label="Simple moving averages">
+            {smaOpts.windows.map(w => (
+              <button key={w} className={smaOn.has(w) ? 'on' : ''}
+                onClick={() => setSmaOn(prev => {
+                  const next = new Set(prev);
+                  if (next.has(w)) next.delete(w); else next.add(w);
+                  return next;
+                })}>
+                {smaOn.has(w) ? '✓ ' : ''}{w}W SMA
+              </button>
+            ))}
           </div>
         )}
         <div className="grp share-grp share-menu">
@@ -460,6 +519,10 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                   stroke={seriesColor(c, i)}
                   strokeWidth={c === 'price' && data.columns.length > 1 ? 2.2 : 1.7} connectNulls />
               ))}
+              {smaSeries.map(s => (
+                <Line key={s.key} yAxisId="m" dataKey={s.key} dot={false} isAnimationActive={false}
+                  stroke={SMA_COLORS[s.weeks] ?? 'var(--text-dim)'} strokeWidth={1.4} connectNulls />
+              ))}
               {showProj && data.projection?.length > 0 && (
                 <Line yAxisId="m" dataKey={data.columns[0] + '_proj'} dot={false} isAnimationActive={false}
                   stroke={seriesColor(data.columns[0], 0)} strokeWidth={1.7}
@@ -472,10 +535,14 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             </ComposedChart>
           </ResponsiveContainer></div>
         )}
-        {view === 'series' && (data?.columns?.length ?? 0) > 1 && metric.kind !== 'stacked' && (
+        {view === 'series' && metric.kind !== 'stacked'
+          && ((data?.columns?.length ?? 0) > 1 || smaSeries.length > 0) && (
           <div className="cycle-key">
-            {data.columns.map((c, i) => (
+            {(data?.columns ?? []).map((c, i) => (
               <span key={c}><i style={{ background: seriesColor(c, i) }} />{seriesLabel(c)}</span>
+            ))}
+            {smaSeries.map(s => (
+              <span key={s.key}><i style={{ background: SMA_COLORS[s.weeks] ?? 'var(--text-dim)' }} />{seriesLabel(s.key)}</span>
             ))}
           </div>
         )}

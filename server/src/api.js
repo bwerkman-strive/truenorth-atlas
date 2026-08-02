@@ -162,11 +162,12 @@ app.get('/api/catalog', async (_req, res) => {
   cache(res);
   res.json({
     categories: CATEGORIES,
-    metrics: METRICS.map(({ slug, name, category, format, unit, short, explain, method, zones, kind, logDefault, unitToggle, projection, column, columns }) => ({
+    metrics: METRICS.map(({ slug, name, category, format, unit, short, explain, method, zones, kind, logDefault, unitToggle, projection, column, columns, sma }) => ({
       slug, name, category, format, unit, short,
       explain: copy[slug]?.explain ?? explain,
       method: copy[slug]?.method ?? method,
       zones: zones ?? [], kind: kind ?? 'line',
+      sma: sma ?? null,
       // The series /api/series/:slug returns; lets the UI know when price is
       // already part of the chart (no overlay toggle) without a second flag.
       columns: columns ?? [column],

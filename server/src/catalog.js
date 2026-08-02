@@ -25,6 +25,9 @@ export const METRICS = [
   {
     slug: 'price', column: 'price', name: 'BTC Price', category: 'valuation', ...usd,
     logDefault: true,
+    // Selectable simple-moving-average overlays (weeks); `active` renders by
+    // default. Computed client-side from the full daily series.
+    sma: { windows: [20, 50, 200], active: [200] },
     short: 'Daily USD closing price of Bitcoin.',
     explain: 'The market price everyone quotes, included here as the baseline every on-chain valuation model is measured against.',
     method: 'Daily close, UTC. All on-chain USD valuations in this platform key each coin to the close of the day it last moved.',
