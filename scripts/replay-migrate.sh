@@ -15,10 +15,16 @@
 #   scripts/replay-migrate.sh switch-local # rewrite server/.env.local to local DB (Render URL preserved)
 # then:  scripts/replay-tune.sh restart-worker
 #
+# Mid-replay refresh (worker keeps running; pg_dump snapshots are consistent
+# by the replay's own crash-safety design):
+#   scripts/replay-migrate.sh push-to-render  # dump local chain tables -> reload Render in place
+#
 # Overridables (export before running):
 #   ATLAS_PG_DIR  (default ~/atlas-pg)          data directory — put on an external SSD if / is tight
 #   ATLAS_PG_PORT (default 5434)
+#   ATLAS_LOCAL_DB (default atlas)
 #   ATLAS_DUMP    (default ~/atlas-chain.dump)
+#   ATLAS_RENDER_SSLMODE (default require)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,7 +32,9 @@ ENVFILE="${ATLAS_ENV_FILE:-$ROOT/server/.env.local}"
 PGDIR="${ATLAS_PG_DIR:-$HOME/atlas-pg}"
 PGPORT_LOCAL="${ATLAS_PG_PORT:-5434}"
 DUMP="${ATLAS_DUMP:-$HOME/atlas-chain.dump}"
-LOCAL_URL="postgres://atlas@127.0.0.1:${PGPORT_LOCAL}/atlas"
+LOCAL_DB="${ATLAS_LOCAL_DB:-atlas}"
+LOCAL_URL="postgres://atlas@127.0.0.1:${PGPORT_LOCAL}/${LOCAL_DB}"
+RENDER_SSL="${ATLAS_RENDER_SSLMODE:-require}"
 CHAIN_TABLES=(blocks block_agg utxos day_active_addresses chain_state metrics_daily prices)
 
 if [[ -f "$ENVFILE" ]]; then set -a; source "$ENVFILE"; set +a; fi
@@ -156,6 +164,48 @@ EOF
     echo "Switched. $ENVFILE now points at $LOCAL_URL (height $got);"
     echo "the Render URL is preserved as RENDER_DATABASE_URL and in $ENVFILE.render-backup."
     echo "Now run: scripts/replay-tune.sh restart-worker"
+    ;;
+
+  push-to-render)
+    # Refresh the frozen Render DB with the local replay's current state.
+    # The local worker KEEPS RUNNING: the dump is one consistent MVCC
+    # snapshot, and every committed state is valid by the replay's design.
+    # Render's site data misbehaves during the reload window; admin tables
+    # are untouched. Restore order matters (block_agg FK -> blocks) because
+    # Render's role is not superuser: per-table, blocks first.
+    if [[ -z "${RENDER_DATABASE_URL:-}" ]]; then
+      echo "RENDER_DATABASE_URL not set (expected in $ENVFILE after switch-local)"; exit 1
+    fi
+    PUSH_DUMP="$HOME/atlas-push.dump"
+    h=$(psql "$LOCAL_URL" -Atc "SELECT MAX(height) FROM blocks;")
+    echo "Local height at push start: $h"
+    echo "[1/5] Dumping local chain tables (worker stays up)..."
+    tflags=(); for t in "${CHAIN_TABLES[@]}"; do tflags+=(-t "$t"); done
+    "$PGBIN/pg_dump" "$LOCAL_URL" -Fc -Z1 --no-owner --no-privileges "${tflags[@]}" -f "$PUSH_DUMP"
+    ls -lh "$PUSH_DUMP"
+    echo "[2/5] Dropping Render utxos indexes for fast load..."
+    PGSSLMODE="$RENDER_SSL" psql "$RENDER_DATABASE_URL" -q \
+      -c "DROP INDEX IF EXISTS utxos_address_live;" \
+      -c "DROP INDEX IF EXISTS utxos_spent_height_idx;" \
+      -c "ALTER TABLE utxos DROP CONSTRAINT IF EXISTS utxos_pkey;"
+    echo "[3/5] Truncating Render chain tables and reloading (bandwidth-bound)..."
+    PGSSLMODE="$RENDER_SSL" psql "$RENDER_DATABASE_URL" -q \
+      -c "TRUNCATE blocks, block_agg, utxos, day_active_addresses, chain_state, metrics_daily, prices CASCADE;"
+    for t in blocks block_agg utxos day_active_addresses chain_state metrics_daily prices; do
+      echo "  loading $t ..."
+      PGSSLMODE="$RENDER_SSL" "$PGBIN/pg_restore" -d "$RENDER_DATABASE_URL" --data-only --no-owner -t "$t" "$PUSH_DUMP"
+    done
+    echo "[4/5] Rebuilding Render utxos indexes (long on a big set)..."
+    PGSSLMODE="$RENDER_SSL" psql "$RENDER_DATABASE_URL" -q \
+      -c "ALTER TABLE utxos ADD PRIMARY KEY (txid, vout);" \
+      -c "CREATE INDEX utxos_spent_height_idx ON utxos (spent_height) WHERE spent_height IS NOT NULL;" \
+      -c "CREATE INDEX utxos_address_live ON utxos (address) WHERE spent_height IS NULL AND address IS NOT NULL;" \
+      -c "ANALYZE;"
+    echo "[5/5] Verifying..."
+    rh=$(PGSSLMODE="$RENDER_SSL" psql "$RENDER_DATABASE_URL" -Atc "SELECT MAX(height) FROM blocks;")
+    echo "pushed height: $h   render now: $rh"
+    if [[ "$h" == "$rh" ]]; then echo "push VERIFIED (local replay continued meanwhile)."
+    else echo "MISMATCH — investigate before trusting the Render copy."; exit 1; fi
     ;;
 
   *)
