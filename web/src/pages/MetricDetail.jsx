@@ -227,7 +227,13 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
           ? r.hodl_waves ?? r.rc_hodl_waves : null;
         const raw = r[data.columns[0]];
         const obj = raw && typeof raw === 'object' ? raw : bands;
-        return { day: r.day, ...(obj || {}) };
+        if (!obj) return { day: r.day };
+        // Zero-fill against the catalog's band list: some days omit bands
+        // with no activity (e.g. no 10y+ coins spent), and a missing dataKey
+        // breaks recharts stacking.
+        const row = { day: r.day };
+        for (const k of (metric.bands ?? Object.keys(obj))) row[k] = obj[k] ?? 0;
+        return row;
       }).filter(r => Object.keys(r).length > 1);
     }
     const out = data.rows.map(r => {
@@ -294,8 +300,12 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   const headlineValue = scalar
     ? fmt(unitOpts ? scaleVal(latestVal) : latestVal, metric.format, displayUnit)
     : (metric.kind === 'urpd' && urpd?.avg != null ? fmt(urpd.avg, 'usd') : '');
+  // Band order comes from the catalog: the API's JSONB rows arrive with keys
+  // re-sorted by Postgres (length, then bytes), so deriving order from the
+  // data would scramble the stack and the tooltip.
   const waveKeys = metric.kind === 'stacked' && rows.length
-    ? Object.keys(rows[rows.length - 1]).filter(k => k !== 'day') : [];
+    ? (metric.bands ?? Object.keys(rows[rows.length - 1]).filter(k => k !== 'day'))
+    : [];
 
   // URPD: fill the sparse server buckets to a dense, uniform 100-bin series so
   // the category axis spaces linearly; classify each bin against the close.

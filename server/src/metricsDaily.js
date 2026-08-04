@@ -3,12 +3,13 @@
 // precise end-of-day UTXO set.
 import { pool, getState, setState } from './db.js';
 import { config } from './config.js';
+// Band labels live in the catalog (the single source of truth) so the UI's
+// display order and the JSONB keys written here can never drift apart.
+import { WAVE_LABELS, BAL_LABELS } from './catalog.js';
 
 // Fine-grained age buckets (days). 155 is inserted so STH/LTH cohorts can be
 // derived from the same single scan as HODL waves.
 const EDGES = [1, 7, 30, 90, 155, 180, 365, 730, 1095, 1825, 2555, 3650];
-export const WAVE_LABELS = ['24h', '1d–1w', '1w–1m', '1m–3m', '3m–6m', '6m–1y',
-  '1y–2y', '2y–3y', '3y–5y', '5y–7y', '7y–10y', '10y+'];
 // bucket index -> wave label index (buckets 4 and 5 merge into '3m–6m')
 const WAVE_OF = [0, 1, 2, 3, 4, 4, 5, 6, 7, 8, 9, 10, 11];
 
@@ -43,9 +44,9 @@ export function feerateBucketValue(idx) {
 // Spend-age bands counted as "revived" old supply.
 const REVIVED_BANDS = new Set(['1y–2y', '2y–3y', '3y–5y', '5y–7y', '7y–10y', '10y+']);
 
-// Address-balance cohort thresholds (BTC) and their band labels.
+// Address-balance cohort thresholds (BTC); each edge starts the matching
+// BAL_LABELS band (catalog.js), so the two arrays must move together.
 const BAL_THRESHOLDS = [0.01, 0.1, 1, 10, 100, 1000, 10000];
-const BAL_LABELS = ['<0.01', '0.01–0.1', '0.1–1', '1–10', '10–100', '100–1k', '1k–10k', '10k+'];
 
 // At the live tip, a day's blocks are processed before that day's candle
 // exists, so priceForDay falls back to the previous close and marks the day

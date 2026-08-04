@@ -14,6 +14,15 @@ export const CATEGORIES = [
   { id: 'network', name: 'Network Activity', blurb: 'Throughput and economic volume settling on-chain.' },
 ];
 
+// Canonical display order for stacked-band metrics. metricsDaily.js builds
+// the JSONB rows from these same arrays, and the UI orders the stacked areas
+// and tooltip by the `bands` field served from here: Postgres re-sorts JSONB
+// object keys (by length, then bytes), so key order in the data itself is
+// meaningless.
+export const WAVE_LABELS = ['24h', '1d–1w', '1w–1m', '1m–3m', '3m–6m', '6m–1y',
+  '1y–2y', '2y–3y', '3y–5y', '5y–7y', '7y–10y', '10y+'];
+export const BAL_LABELS = ['<0.01', '0.01–0.1', '0.1–1', '1–10', '10–100', '100–1k', '1k–10k', '10k+'];
+
 const usd = { format: 'usd' };
 const usdC = { format: 'usd_compact' };
 const ratio = { format: 'ratio' };
@@ -231,12 +240,14 @@ export const METRICS = [
   },
   {
     slug: 'hodl-waves', column: 'hodl_waves', name: 'HODL Waves', category: 'behavior', format: 'stacked_pct', kind: 'stacked',
+    bands: WAVE_LABELS,
     short: 'Supply broken out by how long each coin has sat unmoved.',
     explain: 'The age structure of the ledger. Young bands swell when new money floods in near tops; old bands swell as bear markets age coins into strong hands. Reading the waves tells you which cycle phase the ledger itself says we are in.',
     method: 'Live UTXO set bucketed by age (24h through 10y+) as a share of supply, snapshotted at each UTC day end.',
   },
   {
     slug: 'rc-hodl-waves', column: 'rc_hodl_waves', name: 'Realized Cap HODL Waves', category: 'behavior', format: 'stacked_pct', kind: 'stacked',
+    bands: WAVE_LABELS,
     short: 'HODL waves weighted by invested capital instead of coin count.',
     explain: 'Weighting each age band by its USD cost basis shows where the capital, not just the coins, sits. A surge in young, expensive supply means new capital bearing high cost basis dominates: the classic late-cycle fingerprint.',
     method: 'Same age buckets, each UTXO weighted by value × creation-day price, as a share of realized cap.',
@@ -500,6 +511,7 @@ export const METRICS = [
   {
     slug: 'spent-age-bands', column: 'spent_age_bands', name: 'Spent Volume Age Bands', category: 'behavior',
     format: 'stacked_pct', kind: 'stacked',
+    bands: WAVE_LABELS,
     short: 'Each day\'s spent volume broken down by how old the coins were.',
     explain: 'HODL waves show what is being held; this shows what is being spent. When the old bands widen, dormant conviction is breaking, either distribution into strength or capitulation into weakness, and every cycle top and bottom has printed a distinctive signature here. The bands use the same age boundaries as HODL waves, so the two views line up exactly.',
     method: 'BTC volume of spent outputs per UTC day, bucketed by coin age at spend time into the HODL wave bands, shown as shares of that day\'s spent volume.',
@@ -550,6 +562,7 @@ export const METRICS = [
   {
     slug: 'balance-bands', column: 'balance_bands', name: 'Supply by Address Balance', category: 'cohorts',
     format: 'stacked_pct', kind: 'stacked',
+    bands: BAL_LABELS,
     short: 'What share of supply sits in small, medium, and large addresses.',
     explain: 'The wealth distribution of the ledger, from sub-0.01 BTC addresses to five-figure holdings. Shifts between bands track accumulation and distribution by size class: small bands absorbing share during bear markets is the classic retail-accumulation signature, while large-band growth can be custody concentration as much as whales. Entity caveats apply throughout.',
     method: 'Live UTXO set grouped by address, addresses bucketed by total balance, shown as each band\'s share of all addressed supply (outputs with no standard address are excluded).',

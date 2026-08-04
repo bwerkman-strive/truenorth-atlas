@@ -73,6 +73,22 @@ test('zone bands are well-formed', () => {
   }
 });
 
+test('stacked metrics declare a canonical band order', () => {
+  // Postgres re-sorts JSONB object keys, so the UI cannot derive display
+  // order from the series rows; every stacked metric must carry it in
+  // `bands`, and the labels must be unique.
+  for (const m of METRICS) {
+    if (m.kind !== 'stacked') {
+      assert.ok(!('bands' in m), `non-stacked metric "${m.slug}" declares bands`);
+      continue;
+    }
+    assert.ok(Array.isArray(m.bands) && m.bands.length >= 2,
+      `stacked metric "${m.slug}" needs a bands array`);
+    assert.equal(new Set(m.bands).size, m.bands.length,
+      `stacked metric "${m.slug}" has duplicate band labels`);
+  }
+});
+
 test('overlayPrice stays retired: price rides in columns, never as a flag', () => {
   // Metrics that want BTC price on the chart list 'price' in `columns`; the
   // UI offers its overlay toggle only when it is absent. A metric declaring
