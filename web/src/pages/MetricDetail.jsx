@@ -482,7 +482,10 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
         )}
         {view === 'series' && !err && rows.length > 0 && metric.kind === 'stacked' && (
           <div className="chartwrap"><ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={rows} stackOffset="expand" margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            {/* reverseStackOrder puts the first-declared band at the TOP, so
+                the stack reads smallest to largest top-to-bottom, matching
+                the tooltip's declaration-order rows. */}
+            <AreaChart data={rows} stackOffset="expand" reverseStackOrder margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <XAxis dataKey="day" tickFormatter={fmtDay} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={60} />
               <YAxis tickFormatter={(v) => (v * 100).toFixed(0) + '%'} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} />
               <Tooltip {...TOOLTIP_PROPS}
