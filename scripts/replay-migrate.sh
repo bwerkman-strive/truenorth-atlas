@@ -176,6 +176,10 @@ EOF
     if [[ -z "${RENDER_DATABASE_URL:-}" ]]; then
       echo "RENDER_DATABASE_URL not set (expected in $ENVFILE after switch-local)"; exit 1
     fi
+    # Aggressive TCP keepalives: the hour-long utxos COPY died mid-stream on
+    # 2026-08-05 when an idle-looking connection was dropped by the path.
+    sep='?'; [[ "$RENDER_DATABASE_URL" == *\?* ]] && sep='&'
+    RURL="${RENDER_DATABASE_URL}${sep}keepalives=1&keepalives_idle=20&keepalives_interval=10&keepalives_count=15"
     PUSH_DUMP="$HOME/atlas-push.dump"
     h=$(psql "$LOCAL_URL" -Atc "SELECT MAX(height) FROM blocks;")
     echo "Local height at push start: $h"
@@ -184,25 +188,34 @@ EOF
     "$PGBIN/pg_dump" "$LOCAL_URL" -Fc -Z1 --no-owner --no-privileges "${tflags[@]}" -f "$PUSH_DUMP"
     ls -lh "$PUSH_DUMP"
     echo "[2/5] Dropping Render utxos indexes for fast load..."
-    PGSSLMODE="$RENDER_SSL" psql "$RENDER_DATABASE_URL" -q \
+    PGSSLMODE="$RENDER_SSL" psql "$RURL" -q \
       -c "DROP INDEX IF EXISTS utxos_address_live;" \
       -c "DROP INDEX IF EXISTS utxos_spent_height_idx;" \
       -c "ALTER TABLE utxos DROP CONSTRAINT IF EXISTS utxos_pkey;"
     echo "[3/5] Truncating Render chain tables and reloading (bandwidth-bound)..."
-    PGSSLMODE="$RENDER_SSL" psql "$RENDER_DATABASE_URL" -q \
+    PGSSLMODE="$RENDER_SSL" psql "$RURL" -q \
       -c "TRUNCATE blocks, block_agg, utxos, day_active_addresses, chain_state, metrics_daily, prices CASCADE;"
+    # A table's COPY is one transaction: a failed load rolls back to empty,
+    # so retrying the same table is always safe.
     for t in blocks block_agg utxos day_active_addresses chain_state metrics_daily prices; do
-      echo "  loading $t ..."
-      PGSSLMODE="$RENDER_SSL" "$PGBIN/pg_restore" -d "$RENDER_DATABASE_URL" --data-only --no-owner -t "$t" "$PUSH_DUMP"
+      loaded=0
+      for attempt in 1 2 3; do
+        echo "  loading $t (attempt $attempt)..."
+        if PGSSLMODE="$RENDER_SSL" "$PGBIN/pg_restore" -d "$RURL" --data-only --no-owner -t "$t" "$PUSH_DUMP"; then
+          loaded=1; break
+        fi
+        echo "  $t failed; retrying in 20s..."; sleep 20
+      done
+      [[ $loaded -eq 1 ]] || { echo "GIVING UP on $t after 3 attempts."; exit 1; }
     done
     echo "[4/5] Rebuilding Render utxos indexes (long on a big set)..."
-    PGSSLMODE="$RENDER_SSL" psql "$RENDER_DATABASE_URL" -q \
+    PGSSLMODE="$RENDER_SSL" psql "$RURL" -q \
       -c "ALTER TABLE utxos ADD PRIMARY KEY (txid, vout);" \
       -c "CREATE INDEX utxos_spent_height_idx ON utxos (spent_height) WHERE spent_height IS NOT NULL;" \
       -c "CREATE INDEX utxos_address_live ON utxos (address) WHERE spent_height IS NULL AND address IS NOT NULL;" \
       -c "ANALYZE;"
     echo "[5/5] Verifying..."
-    rh=$(PGSSLMODE="$RENDER_SSL" psql "$RENDER_DATABASE_URL" -Atc "SELECT MAX(height) FROM blocks;")
+    rh=$(PGSSLMODE="$RENDER_SSL" psql "$RURL" -Atc "SELECT MAX(height) FROM blocks;")
     echo "pushed height: $h   render now: $rh"
     if [[ "$h" == "$rh" ]]; then echo "push VERIFIED (local replay continued meanwhile)."
     else echo "MISMATCH — investigate before trusting the Render copy."; exit 1; fi
