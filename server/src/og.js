@@ -17,10 +17,16 @@ import { bySlug } from './catalog.js';
 import { config } from './config.js';
 
 const W = 1200, H = 630;
-// Strive brand system: ink surface, bone text, slate secondary, hairlines.
-// Orange is the reserved accent; aurora green survives as the chart-data color.
-const INK = '#0b0c0e', LINE = '#333230';
-const AURORA = '#4fe3a9', SLATE = '#918b7d', TEXT = '#f2ede3', BTC = '#f7931a';
+// True North palette (style guide §2.1). Flattened to opaque hex because the
+// card is a standalone SVG with no page ground to composite against: LINE is
+// equinox/50 and SLATE is light-sky/80, each already resolved over deep-black.
+// Orange is the reserved accent; emerald survives as the chart-data color.
+const INK = '#1a1a1a', LINE = '#36343d';
+const AURORA = '#34d399', SLATE = '#a2aab4', TEXT = '#ffffff', BTC = '#f7941d';
+// The Epoch Rings mark's inner rings take solid equinox, not the LINE
+// hairline, for the same reason as the web component: at equinox/50 over
+// deep-black they would nearly disappear.
+const MARK = '#514f60';
 
 const cache = new Map(); // slug -> { png, at }
 const TTL = 60 * 60 * 1000;
@@ -55,9 +61,9 @@ function epochRingsMark(x, y, s) {
   // s = size; drawn around center (x,y)
   const r = (f) => (s / 240) * f;
   return `<g>
-    <circle cx="${x}" cy="${y}" r="${r(34)}" stroke="${LINE}" stroke-width="${r(9)}" fill="none"/>
-    <circle cx="${x}" cy="${y}" r="${r(58)}" stroke="${LINE}" stroke-width="${r(8)}" fill="none"/>
-    <circle cx="${x}" cy="${y}" r="${r(78)}" stroke="${LINE}" stroke-width="${r(7)}" fill="none"/>
+    <circle cx="${x}" cy="${y}" r="${r(34)}" stroke="${MARK}" stroke-width="${r(9)}" fill="none"/>
+    <circle cx="${x}" cy="${y}" r="${r(58)}" stroke="${MARK}" stroke-width="${r(8)}" fill="none"/>
+    <circle cx="${x}" cy="${y}" r="${r(78)}" stroke="${MARK}" stroke-width="${r(7)}" fill="none"/>
     <circle cx="${x}" cy="${y}" r="${r(94)}" stroke="${TEXT}" stroke-width="${r(8)}" fill="none" stroke-opacity="0.9"/>
     <path d="M${x} ${y - r(114)} L${x + r(7)} ${y - r(100)} L${x + r(21)} ${y - r(96)} L${x + r(7)} ${y - r(92)} L${x} ${y - r(78)} L${x - r(7)} ${y - r(92)} L${x - r(21)} ${y - r(96)} L${x - r(7)} ${y - r(100)} Z" fill="${TEXT}"/>
     <circle cx="${x + r(94) * Math.sin(1.1)}" cy="${y - r(94) * Math.cos(1.1)}" r="${r(11)}" fill="${BTC}"/>
@@ -124,12 +130,12 @@ export async function buildCardSvg(slug) {
   <rect width="${W}" height="${H}" fill="${INK}"/>
 
   ${epochRingsMark(96, 92, 96)}
-  <text x="168" y="78" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-weight="700" font-size="30" fill="${TEXT}" letter-spacing="3">TRUE NORTH <tspan fill="${BTC}">ATLAS</tspan></text>
-  <text x="168" y="112" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-size="19" fill="${SLATE}" letter-spacing="3">NAVIGATING THE BITCOIN LEDGER</text>
+  <text x="168" y="78" font-family="Inter, 'DejaVu Sans', sans-serif" font-weight="700" font-size="30" fill="${TEXT}" letter-spacing="3">TRUE NORTH <tspan fill="${BTC}">ATLAS</tspan></text>
+  <text x="168" y="112" font-family="Inter, 'DejaVu Sans', sans-serif" font-size="19" fill="${SLATE}" letter-spacing="3">NAVIGATING THE BITCOIN LEDGER</text>
 
-  <text x="80" y="188" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-weight="700" font-size="46" fill="${TEXT}">${esc(m.name)}</text>
-  <text x="1120" y="150" text-anchor="end" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-weight="700" font-size="58" fill="${TEXT}">${esc(valueStr)}</text>
-  <text x="1120" y="186" text-anchor="end" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-size="21" fill="${SLATE}">${esc(pctStr)}</text>
+  <text x="80" y="188" font-family="Inter, 'DejaVu Sans', sans-serif" font-weight="700" font-size="46" fill="${TEXT}">${esc(m.name)}</text>
+  <text x="1120" y="150" text-anchor="end" font-family="Inter, 'DejaVu Sans', sans-serif" font-weight="700" font-size="58" fill="${TEXT}">${esc(valueStr)}</text>
+  <text x="1120" y="186" text-anchor="end" font-family="Inter, 'DejaVu Sans', sans-serif" font-size="21" fill="${SLATE}">${esc(pctStr)}</text>
 
   <g stroke="${LINE}" stroke-width="1" opacity="0.7">
     <line x1="80" y1="320" x2="1120" y2="320"/><line x1="80" y1="390" x2="1120" y2="390"/>
@@ -137,11 +143,11 @@ export async function buildCardSvg(slug) {
   </g>
   ${area ? `<path d="${area}" fill="url(#fade)"/>` : ''}
   ${path ? `<path d="${path}" stroke="${AURORA}" stroke-width="4" fill="none" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
-  ${!path ? `<text x="600" y="400" text-anchor="middle" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-size="26" fill="${SLATE}">Syncing history from a fully-validating node…</text>` : ''}
+  ${!path ? `<text x="600" y="400" text-anchor="middle" font-family="Inter, 'DejaVu Sans', sans-serif" font-size="26" fill="${SLATE}">Syncing history from a fully-validating node…</text>` : ''}
 
   <line x1="80" y1="560" x2="1120" y2="560" stroke="${LINE}" stroke-width="2"/>
-  <text x="80" y="596" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-size="20" fill="${SLATE}">${esc(latest.d ? `As of ${usDay(latest.d)} UTC · computed from a fully-validating Bitcoin node` : 'Computed from a fully-validating Bitcoin node')}</text>
-  <text x="1120" y="596" text-anchor="end" font-family="'IBM Plex Sans', 'DejaVu Sans', sans-serif" font-weight="600" font-size="20" fill="${SLATE}">${esc(config.publicSiteUrl.replace(/^https?:\/\//, ''))}</text>
+  <text x="80" y="596" font-family="Inter, 'DejaVu Sans', sans-serif" font-size="20" fill="${SLATE}">${esc(latest.d ? `As of ${usDay(latest.d)} UTC · computed from a fully-validating Bitcoin node` : 'Computed from a fully-validating Bitcoin node')}</text>
+  <text x="1120" y="596" text-anchor="end" font-family="Inter, 'DejaVu Sans', sans-serif" font-weight="600" font-size="20" fill="${SLATE}">${esc(config.publicSiteUrl.replace(/^https?:\/\//, ''))}</text>
 </svg>`;
 }
 

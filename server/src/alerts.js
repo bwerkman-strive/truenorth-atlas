@@ -14,7 +14,7 @@ import express from 'express';
 import { pool } from './db.js';
 import { bySlug } from './catalog.js';
 import { config } from './config.js';
-import { sendEmail, renderEmail, chartBlock } from './email.js';
+import { sendEmail, renderEmail, chartBlock, EMAIL_COLORS } from './email.js';
 
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest();
 // Display dates as MM/DD/YYYY (ISO "YYYY-MM-DD" in, US format out).
@@ -68,7 +68,7 @@ export function alertsRouter(rateLimiter) {
           eyebrow: 'Confirm your alert',
           title: m.name,
           preheader: `One click and we'll watch ${m.name} for you.`,
-          bodyHtml: `<p style="margin:0 0 18px;line-height:1.7;color:#d5cfc1">Confirm this alert and
+          bodyHtml: `<p style="margin:0 0 18px;line-height:1.7;color:${EMAIL_COLORS.BODY}">Confirm this alert and
             we'll email you when <strong>${describe({ condition, threshold }, m)}</strong> on
             finalized daily data. Didn't request this? Ignore this email and nothing will ever be sent.</p>`,
           cta: { label: 'Confirm alert', url: confirmUrl },
@@ -147,11 +147,11 @@ export async function checkAlerts(log) {
           eyebrow: 'Signal',
           title: `${m.name} crossed your threshold`,
           preheader: `${m.name} closed at ${today.v} on ${usDay(today.d)}.`,
-          bodyHtml: `<p style="margin:0 0 14px;line-height:1.7;color:#d5cfc1"><strong>${m.name}</strong>
-            closed at <strong style="color:#f2ede3">${today.v}</strong> on ${usDay(today.d)} — crossing your
+          bodyHtml: `<p style="margin:0 0 14px;line-height:1.7;color:${EMAIL_COLORS.BODY}"><strong>${m.name}</strong>
+            closed at <strong style="color:${EMAIL_COLORS.TEXT}">${today.v}</strong> on ${usDay(today.d)} — crossing your
             ${a.condition} ${a.threshold} threshold.</p>
             ${chartBlock(m.slug, m.name)}
-            <p style="margin:0 0 18px;color:#918b7d;line-height:1.65">${m.short ?? ''}</p>`,
+            <p style="margin:0 0 18px;color:${EMAIL_COLORS.SLATE};line-height:1.65">${m.short ?? ''}</p>`,
           cta: { label: 'Open the chart', url: `${config.publicSiteUrl}/#/m/${m.slug}` },
           unsubUrl,
         }),

@@ -1,9 +1,18 @@
 ---
 name: strive-brand
-description: Canonical Strive web brand system (color, type, layout, interactive treatments) as the reference for any Atlas visual work. Load BEFORE editing theme.css tokens, choosing colors, sizing type, styling buttons/links/eyebrows/focus rings, or building any user-facing surface, so Atlas stays aligned to the flagship strive.com build. Also read it before answering "what is the brand color / font / spacing" questions.
+description: SUPERSEDED historical reference for the Strive web brand system. Atlas no longer uses it — it moved to the True North brand system when it began being hosted on tnorth.com. Do NOT load this for Atlas visual work; use the truenorth-brand skill instead. Kept only to explain what the pre-2026-08 Strive-era code and commits were aligned to.
 ---
 
-# Strive web brand system (Atlas alignment reference)
+> **SUPERSEDED — do not apply to Atlas.**
+> Atlas is hosted on tnorth.com and follows the True North tool & dashboard
+> style guide. The canonical reference is the **`truenorth-brand`** skill.
+> Everything below describes the Strive system Atlas used *before* the
+> 2026-08-10 rebrand, and is retained only to make older code and commits
+> legible. Applying it would revert the current design system: it inverts the
+> CTA rule (bone pills vs orange fills), uses a serif display face that is no
+> longer shipped, and names color tokens that no longer exist.
+
+# Strive web brand system (historical — pre-2026-08 Atlas alignment)
 
 Pulled from the flagship strive.com style reference (`treasury.strive.com`
 print, revised **2026-07-20**, verified against `main @ ff76be9`). This is the

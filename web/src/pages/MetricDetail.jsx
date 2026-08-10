@@ -20,7 +20,9 @@ const SERIES_LABELS = {
   sth_cost_basis: 'STH Cost Basis', lth_cost_basis: 'LTH Cost Basis',
   circulating_supply: 'Circulating Supply',
 };
-const MULTI_COLORS = ['var(--btc)', 'var(--aurora)', 'var(--cold)', '#c084fc'];
+// Categorical series palette, in the style guide's §2.4 slot order
+// (orange / blue / green / purple / cyan / rose).
+const MULTI_COLORS = ['var(--btc)', 'var(--cold)', 'var(--aurora)', '#C084FC'];
 function seriesColor(c, i) {
   if (c === 'price') return 'var(--btc)';
   if (c.includes('loss')) return 'var(--hot)';
@@ -35,30 +37,40 @@ const seriesLabel = (c) => {
     : SERIES_LABELS[c] ?? c;
 };
 
-// Moving-average overlays (catalog `sma`, weeks -> stroke). Hues validated
-// with the dataviz palette checker against the other line colors on the ink
-// surface: worst colorblind pair ΔE 9.2, all pairs >= 3:1 on the background.
-const SMA_COLORS = { 20: 'var(--aurora)', 50: 'var(--cold)', 200: '#e05fc4' };
+// Moving-average overlays (catalog `sma`, weeks -> stroke), drawn from the
+// §2.4 categorical palette. Every pair clears 3:1 against both the page ground
+// and the card composite.
+const SMA_COLORS = { 20: 'var(--aurora)', 50: 'var(--cold)', 200: '#C084FC' };
 const smaKeyOf = (w) => `sma_${w}w`;
 
-const EPOCH_COLORS = { 1: '#6c809a', 2: '#7b6cf0', 3: '#58a8ff', 4: '#4fd7d0', 5: '#4fe3a9' };
+// Halving epochs are ordered, so this is a ramp rather than a categorical set:
+// the guide's neutral benchmark gray for the oldest epoch, then cool -> green
+// through the §2.4 palette, with the current cycle drawn heavier.
+const EPOCH_COLORS = { 1: '#9CA3AF', 2: '#C084FC', 3: '#60A5FA', 4: '#22D3EE', 5: '#4ADE80' };
 const EPOCH_WIDTH = { 5: 2.6 }; // current cycle drawn heavier
 
+// URPD price bands are a sequential hot -> cold ramp, which the style guide
+// does not define (it specifies categorical sets only). Built from the same
+// Tailwind 400 tier the guide draws its named shades from, so luminance stays
+// in one band: min contrast 5.80:1 on the card composite.
 const WAVE_COLORS = [
-  '#ff6b4a', '#ff8f4a', '#f7b34a', '#e3d24f', '#a8e04f', '#4fe3a9',
-  '#4fd7d0', '#58a8ff', '#5f7ff2', '#7b6cf0', '#9a5fd9', '#b04fc4',
+  '#FB7185', '#F87171', '#FB923C', '#FBBF24', '#FACC15', '#A3E635',
+  '#4ADE80', '#34D399', '#22D3EE', '#38BDF8', '#60A5FA', '#C084FC',
 ];
 
 // Shared tooltip chrome. Item text color comes from each series' own stroke/
 // fill; charts whose series carry no usable color (the URPD bars, colored per
 // Cell) must set an explicit itemStyle or recharts falls back to black.
+// Tooltip chrome follows the guide's §6.4 convention (solstice fill, equinox
+// border, light-sky label text).
 const TOOLTIP_PROPS = {
-  contentStyle: { background: '#0f1013', border: '1px solid var(--ink-line)', borderRadius: 8, fontSize: 12 },
+  contentStyle: { background: '#323140', border: '1px solid #514F60', borderRadius: 8, fontSize: 12 },
+  labelStyle: { color: '#C4CEDA' },
 };
 
 function toneColor(t) {
-  return t === 'hot' ? 'rgba(255,107,74,0.10)' : t === 'warm' ? 'rgba(247,179,74,0.10)'
-    : t === 'cold' ? 'rgba(88,168,255,0.10)' : 'transparent';
+  return t === 'hot' ? 'rgba(248,113,113,0.10)' : t === 'warm' ? 'rgba(251,191,36,0.10)'
+    : t === 'cold' ? 'rgba(96,165,250,0.10)' : 'transparent';
 }
 
 export default function MetricDetail({ metric, latestVal, onBack, categories, features }) {
@@ -569,7 +581,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             <div className="zone-key">
               {metric.zones.filter(z => z.tone !== 'line').map((z, i) => (
                 <div key={i} className="zk">
-                  <i style={{ background: z.tone === 'hot' ? 'var(--hot)' : z.tone === 'warm' ? '#f7b34a' : 'var(--cold)', opacity: 0.7 }} />
+                  <i style={{ background: z.tone === 'hot' ? 'var(--hot)' : z.tone === 'warm' ? 'var(--amber)' : 'var(--cold)', opacity: 0.7 }} />
                   {z.label} ({metric.format === 'percent'
                     ? `${axisTick(z.from, 'percent')}–${axisTick(z.to, 'percent')}` : `${z.from}–${z.to}`})
                 </div>
