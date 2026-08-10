@@ -17,11 +17,23 @@
 import { pool } from './db.js';
 import { config } from './config.js';
 
-// Strive brand system: ink surfaces, bone text/CTAs, slate secondary,
-// hairlines, orange as the single reserved accent (eyebrows, links, the
-// wordmark's one orange touch).
-const INK = '#0b0c0e', PANEL = '#0f1013', LINE = '#333230';
-const ORANGE = '#f7931a', BONE = '#f2ede3', BODY = '#d5cfc1', SLATE = '#918b7d', TEXT = '#f2ede3';
+// True North palette, matching the web app (web/src/theme.css). The style
+// guide governs tnorth.com's pages rather than email, but a rebranded site
+// that mails in the old colors reads as a different company — so the palette
+// carries over even though the layout conventions do not.
+//
+// Flattened to opaque hex on purpose: email clients cannot be relied on for
+// CSS variables or rgba, so PANEL is the solstice/30 card composite and LINE
+// and the secondary tiers are pre-composited over the ink ground.
+const INK = '#1a1a1a', PANEL = '#212125', LINE = '#36343d';
+const ORANGE = '#f7941d', BODY = '#c4ceda', SLATE = '#a2aab4', TEXT = '#ffffff';
+const FOOTER = '#9198a0';   // light-sky/70 — 5.97:1 on the ink ground
+
+// Callers that compose their own body HTML (alerts.js, newsletters.js) render
+// inside this template, so they need the same palette. Exported rather than
+// re-typed at the call sites: the copies drifted through the last rebrand and
+// left old-brand text colors inside new-brand emails.
+export const EMAIL_COLORS = { INK, PANEL, LINE, ORANGE, BODY, SLATE, TEXT };
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -81,7 +93,7 @@ ${preheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0">
       ${title ? `<h1 style="margin:0 0 16px;font-size:25px;line-height:1.3;color:${TEXT}">${esc(title)}</h1>` : ''}
       ${bodyHtml}
       ${cta ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 10px"><tr><td
-        style="background:${BONE};border-radius:999px">
+        style="background:${ORANGE};border-radius:8px">
         <a href="${esc(cta.url)}" style="display:inline-block;padding:13px 26px;font-family:Helvetica,Arial,sans-serif;
         font-weight:700;font-size:14px;letter-spacing:.04em;color:${INK};text-decoration:none">${esc(cta.label)}</a></td></tr></table>` : ''}
     </td></tr>
@@ -94,7 +106,7 @@ ${preheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0">
       </div>
     </td></tr>
   </table>
-  <div style="font-family:Helvetica,Arial,sans-serif;color:#6a655a;font-size:11px;padding:16px">
+  <div style="font-family:Helvetica,Arial,sans-serif;color:${FOOTER};font-size:11px;padding:16px">
     A True North Media Network property · Powered by Strive</div>
 </td></tr></table>
 </body></html>`;

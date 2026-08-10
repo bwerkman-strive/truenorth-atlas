@@ -35,8 +35,8 @@ const STYLE_PROPS = [
 const FONT_URL = '/fonts/ibm-plex-sans-400-normal.woff2';
 const FONT_FAMILY = 'IBM Plex Sans';
 
-const UI = '"IBM Plex Sans", system-ui, sans-serif';
-const MONO = '"IBM Plex Mono", ui-monospace, monospace';
+const UI = 'Inter, system-ui, sans-serif';
+const MONO = '"JetBrains Mono", ui-monospace, monospace';
 
 let fontCssPromise = null;
 
@@ -156,11 +156,16 @@ export async function chartToPngBlob(container, { title = '', value = '', scale 
   const ctx = canvas.getContext('2d');
   ctx.scale(scale, scale);
 
-  const ink = cssVar('--text', '#f2ede3');
-  const dim = cssVar('--text-dim', '#9a958c');
-  const orange = cssVar('--orange', '#f7931a');
+  const ink = cssVar('--text', '#ffffff');
+  const dim = cssVar('--text-dim', '#a2aab4');
+  const orange = cssVar('--orange', '#f7941d');
+  // Card surfaces are a translucent solstice wash over the page ground, so the
+  // ground has to be laid down first: filling a transparent canvas with the
+  // wash alone would export a semi-transparent PNG.
+  ctx.fillStyle = cssVar('--deep-black', '#1a1a1a');
+  ctx.fillRect(0, 0, W, H);
   const panel = getComputedStyle(container).backgroundColor;
-  ctx.fillStyle = panel && panel !== 'rgba(0, 0, 0, 0)' ? panel : cssVar('--ink-panel', '#111');
+  ctx.fillStyle = panel && panel !== 'rgba(0, 0, 0, 0)' ? panel : cssVar('--ink-panel', 'rgba(50, 49, 64, 0.3)');
   ctx.fillRect(0, 0, W, H);
 
   let y = PAD;

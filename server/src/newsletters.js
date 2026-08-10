@@ -23,7 +23,7 @@ import express from 'express';
 import { pool } from './db.js';
 import { bySlug } from './catalog.js';
 import { config } from './config.js';
-import { sendEmail, renderEmail, mdLite, chartBlock } from './email.js';
+import { sendEmail, renderEmail, mdLite, chartBlock, EMAIL_COLORS } from './email.js';
 import { adminAuth } from './keys.js';
 
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest();
@@ -68,7 +68,7 @@ export function subscribeRouter(rateLimiter) {
           eyebrow: 'Stay on course',
           title: 'Confirm your subscription',
           preheader: 'One click and the signal starts arriving.',
-          bodyHtml: `<p style="margin:0 0 18px;line-height:1.7;color:#d5cfc1">Confirm and you'll
+          bodyHtml: `<p style="margin:0 0 18px;line-height:1.7;color:${EMAIL_COLORS.BODY}">Confirm and you'll
             receive the Atlas newsletter — chart-driven reads on where the Bitcoin ledger stands,
             straight from a fully-validating node. No spam, unsubscribe any time.</p>`,
           cta: { label: 'Confirm subscription', url: `${apiOrigin}/api/subscribe/confirm?token=${confirmT}` },

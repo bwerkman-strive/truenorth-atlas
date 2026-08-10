@@ -125,15 +125,28 @@ web/src/
   chrome). No localStorage/sessionStorage anywhere. Chart heights are CSS-owned
   (`.chartwrap` per breakpoint) — never a fixed recharts height prop. Every
   chart keeps the `.chart-watermark`. Colors/typography come from CSS variables
-  in `theme.css`, aligned to the Strive brand system: ink surfaces (`--ink`),
-  bone text (`--bone`), slate secondary (`--text-dim`/`--text-faint`), hairline
-  borders (`--ink-line`), and Bitcoin orange (`--orange` = `--btc`) as the ONE
-  reserved accent (price, the wordmark's em, section eyebrows, editorial links,
-  focus ring — never buttons or chrome; CTAs are bone-filled pills). Green/
-  blue/red (`--aurora`/`--cold`/`--hot`) are chart-data and status colors only.
-  Type: Instrument Serif for display headings (weight 400 only), IBM Plex Sans
-  for UI, IBM Plex Mono for data — all self-hosted woff2 in `web/public/fonts`
-  via `web/src/fonts.css`.
+  in `theme.css`, aligned to the **True North tool & dashboard style guide**
+  (rev 2026-08-08), since Atlas is hosted on tnorth.com. The six brand tokens
+  (`--deep-black` `--solstice` `--equinox` `--light-sky` `--orange-pill`
+  `--starbright`) are the only raw hex in the app; everything else is a
+  semantic alias composited from them, which is this repo's non-Tailwind
+  equivalent of the guide's "named tokens, never arbitrary hex" rule. Surfaces
+  are solstice washes at 20/30/50/70%, hairlines are equinox at 15/30%, and
+  elevation is opacity steps plus borders, never shadows. `--orange-pill`
+  (= `--orange` = `--btc`) is the ONE accent and, unlike the Strive system this
+  replaced, it IS the primary-CTA fill (orange fill + `--deep-black` label,
+  7.63:1; white on orange is 2.28:1 and forbidden). Green/blue/red/amber
+  (`--aurora`/`--cold`/`--hot`/`--amber`) stay chart-data and status colors.
+  Type: Inter for everything (display headings are semibold + tracking-tight,
+  no serif), JetBrains Mono for data — both self-hosted VARIABLE woff2 in
+  `web/public/fonts` via `web/src/fonts.css` (88 KB total; the guide's font
+  budget is 256 KB, so don't add faces or weights).
+- **Text-contrast floor is `--text-faint` (light-sky/70), not the guide's /60.**
+  The guide's §2.2 matrix computes light-sky/60 against the page ground only
+  (4.73:1); over the solstice/30 card composite it drops to 4.36:1 and fails
+  AA, and Atlas renders most of its fine print inside cards. `--text-quiet`
+  (/50) is decorative-only and must never carry the sole rendering of a value,
+  label, or disclosure. Compute new pairs, never eyeball them.
 - **No em-dashes in user-facing copy** (web page/component prose, catalog
   descriptions and zone copy, `apiReference.js` text): use commas, colons,
   semicolons, or parentheses instead. The lone "—" glyph as a missing-value

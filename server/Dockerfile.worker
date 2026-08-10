@@ -11,10 +11,10 @@ FROM node:22-slim
 # fonts installed at all, the SVG's font-family matched nothing and every glyph
 # in every social preview rendered as .notdef tofu.
 #
-# DejaVu rather than the site's IBM Plex: fonts-ibm-plex is not in bookworm main
-# (a build against it fails with "Unable to locate package"). og.js asks for
-# IBM Plex first and falls back to DejaVu, so dropping real Plex TTFs into
-# /usr/share/fonts later would upgrade the cards with no further change here.
+# DejaVu rather than the site's Inter: there is no Inter package in bookworm
+# main. og.js asks for Inter first and falls back to DejaVu, so dropping real
+# Inter TTFs into /usr/share/fonts later would upgrade the cards with no
+# further change here.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends tor ca-certificates fonts-dejavu-core \
   && rm -rf /var/lib/apt/lists/*
