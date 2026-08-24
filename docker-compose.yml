@@ -3,7 +3,7 @@
 #   cd server && DATABASE_URL=postgres://atlas:atlas@localhost:5433/atlas_test PGSSLMODE=disable npm test
 services:
   db:
-    image: postgres:16
+    image: postgres:18
     environment:
       POSTGRES_USER: atlas
       POSTGRES_PASSWORD: atlas
