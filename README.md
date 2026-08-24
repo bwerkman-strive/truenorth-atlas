@@ -70,9 +70,25 @@ Pick one of three connectivity patterns for the sync worker:
    URL and RPC credentials on each service. Expect the initial replay to be
    several times slower over Tor.
 
-3. **VPN / tunnel.** Put the node's LAN RPC behind Tailscale, WireGuard, or an
-   SSH tunnel from wherever the worker runs. Same speed as LAN, works from any
-   host in the tailnet.
+3. **Tailscale — including Render.** `server/Dockerfile.worker` bundles
+   `tailscaled` alongside Tor, so both Render services can reach a node over a
+   tailnet instead of onion routing (faster and far less flaky than Tor's
+   circuit building). Install Tailscale on the Start9 (or any LAN host that
+   can reach the node's RPC), then on each Render service set:
+
+   - `TAILSCALE_AUTHKEY`: a **reusable + ephemeral** auth key from the
+     Tailscale admin console (container state lives in `/tmp`, so the node
+     re-registers on each deploy; ephemeral keys keep the tailnet tidy)
+   - `RPC_SOCKS_PROXY=socks5h://127.0.0.1:1055` (tailscaled's userspace
+     SOCKS5; the `socks5h` scheme resolves MagicDNS names through it)
+   - `BITCOIN_RPC_URL`: the node's tailnet name or 100.x address
+   - clear `TOR_SOCKS_PROXY` (it both selects the proxy and tells the
+     entrypoint to boot Tor)
+
+   With `TAILSCALE_AUTHKEY` unset, none of this runs: the image carries the
+   binaries but the entrypoint never starts them. A generic WireGuard or SSH
+   tunnel from a self-managed worker host works the same way; only the
+   Tailscale path is bundled into the Render image.
 
 Whichever you choose: the RPC password only ever goes in the worker's
 environment — the API and frontend never see the node.
@@ -104,6 +120,7 @@ environment — the API and frontend never see the node.
    | `atlas-sync` | `BITCOIN_RPC_USER`      | from Start9 Properties |
    | `atlas-sync` | `BITCOIN_RPC_PASSWORD`  | from Start9 Properties |
    | `atlas-sync` | `TOR_SOCKS_PROXY`       | only for pattern 2 above |
+   | `atlas-sync` | `TAILSCALE_AUTHKEY` / `RPC_SOCKS_PROXY` | only for pattern 3 above |
    | `atlas-sync` | `CRYPTOCOMPARE_API_KEY` | optional, free key raises limits |
    | `atlas-api`  | `BITCOIN_RPC_URL`/`_USER`/`_PASSWORD` | optional — same values as the worker; enables full tx detail in the explorer (see "Block explorer") |
    | `atlas-web`  | `VITE_API_URL`          | the `atlas-api` URL once live |

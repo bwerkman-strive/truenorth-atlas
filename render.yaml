@@ -70,6 +70,16 @@ services:
         sync: false
       - key: TOR_SOCKS_PROXY
         value: socks5h://127.0.0.1:9050   # in-container Tor; clear if not using .onion
+      # Tailscale plumbing (README pattern 3) — INERT until an auth key is set.
+      # To activate: set TAILSCALE_AUTHKEY (reusable + ephemeral key), set
+      # RPC_SOCKS_PROXY to socks5h://127.0.0.1:1055, clear TOR_SOCKS_PROXY,
+      # and point BITCOIN_RPC_URL at the node's tailnet name.
+      - key: TAILSCALE_AUTHKEY
+        sync: false
+      - key: RPC_SOCKS_PROXY
+        sync: false
+      - key: TAILSCALE_HOSTNAME
+        value: atlas-api
 
   # ---- Sync worker ----------------------------------------------------------
   # Docker runtime: the image (server/Dockerfile.worker) bundles a Tor daemon
@@ -97,6 +107,14 @@ services:
         sync: false
       - key: TOR_SOCKS_PROXY
         value: socks5h://127.0.0.1:9050   # in-container Tor; clear if not using .onion
+      # Tailscale plumbing (README pattern 3) — INERT until an auth key is set.
+      # Same activation recipe as atlas-api above.
+      - key: TAILSCALE_AUTHKEY
+        sync: false
+      - key: RPC_SOCKS_PROXY
+        sync: false
+      - key: TAILSCALE_HOSTNAME
+        value: atlas-sync
       - key: CRYPTOCOMPARE_API_KEY
         sync: false           # deep-history backfill (2010–2015); optional key raises limits
       - key: MASSIVE_API_KEY
