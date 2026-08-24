@@ -19,6 +19,23 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends tor ca-certificates fonts-dejavu-core \
   && rm -rf /var/lib/apt/lists/*
 
+# Tailscale, for reaching a node over a tailnet instead of Tor (README
+# "Connecting a Start9 node", pattern 3). Inert unless TAILSCALE_AUTHKEY is
+# set: the entrypoint only starts tailscaled (userspace networking + SOCKS5
+# on 127.0.0.1:1055 — no TUN device, so it runs unprivileged as USER node)
+# when the key is present. curl is build-time only, for the repo keyring.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl \
+  && curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.noarmor.gpg \
+       -o /usr/share/keyrings/tailscale-archive-keyring.gpg \
+  && echo "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian bookworm main" \
+       > /etc/apt/sources.list.d/tailscale.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends tailscale \
+  && apt-get purge -y curl \
+  && apt-get autoremove -y \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./

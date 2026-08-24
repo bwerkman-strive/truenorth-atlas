@@ -5,7 +5,8 @@
 //
 // Transport: plain HTTP(S) via node:http(s), with optional SOCKS5 proxying so
 // the worker can reach a Tor hidden service (Start9 / Umbrel nodes expose RPC
-// as a .onion by default). Set TOR_SOCKS_PROXY=socks5h://127.0.0.1:9050.
+// as a .onion by default). Set TOR_SOCKS_PROXY=socks5h://127.0.0.1:9050, or
+// RPC_SOCKS_PROXY for a non-Tor SOCKS path (e.g. Tailscale's userspace proxy).
 import http from 'node:http';
 import https from 'node:https';
 import { SocksProxyAgent } from 'socks-proxy-agent';
@@ -15,12 +16,12 @@ let idCounter = 0;
 let cachedAgent = null;
 
 function agentFor(url) {
-  if (config.torSocksProxy) {
-    // timeout also bounds the SOCKS handshake itself; without it a wedged Tor
-    // daemon that accepts the connection but never completes CONNECT would
-    // hang the request forever (the http-level timeout only arms after the
-    // proxy hands over a socket).
-    if (!cachedAgent) cachedAgent = new SocksProxyAgent(config.torSocksProxy, { keepAlive: true, timeout: config.rpcTimeoutMs });
+  if (config.rpcSocksProxy) {
+    // timeout also bounds the SOCKS handshake itself; without it a wedged
+    // proxy daemon that accepts the connection but never completes CONNECT
+    // would hang the request forever (the http-level timeout only arms after
+    // the proxy hands over a socket).
+    if (!cachedAgent) cachedAgent = new SocksProxyAgent(config.rpcSocksProxy, { keepAlive: true, timeout: config.rpcTimeoutMs });
     return cachedAgent;
   }
   if (!cachedAgent) {

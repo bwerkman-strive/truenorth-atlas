@@ -14,10 +14,17 @@ export const config = {
   rpcUser: env('BITCOIN_RPC_USER', ''),
   rpcPass: env('BITCOIN_RPC_PASSWORD', ''),
   rpcTimeoutMs: int('BITCOIN_RPC_TIMEOUT_MS', 120000),
-  // Optional SOCKS5 proxy for reaching Tor hidden services (Start9/Umbrel nodes).
-  // Example: socks5h://127.0.0.1:9050 — 'h' means DNS resolves through Tor,
-  // required for .onion addresses.
-  torSocksProxy: env('TOR_SOCKS_PROXY', ''),
+  // Optional SOCKS5 proxy for reaching the node. Two providers, both bundled
+  // in Dockerfile.worker and started by worker-entrypoint.sh when their env
+  // is set:
+  //   Tor       — TOR_SOCKS_PROXY=socks5h://127.0.0.1:9050 (.onion nodes)
+  //   Tailscale — RPC_SOCKS_PROXY=socks5h://127.0.0.1:1055 (tailnet nodes,
+  //               requires TAILSCALE_AUTHKEY; see README pattern 3)
+  // The 'h' scheme resolves names through the proxy — required for .onion
+  // and for tailnet MagicDNS names. RPC_SOCKS_PROXY is the generic knob and
+  // wins when both are set; TOR_SOCKS_PROXY also tells the entrypoint to
+  // start the Tor daemon, so clear it when switching to Tailscale.
+  rpcSocksProxy: env('RPC_SOCKS_PROXY', env('TOR_SOCKS_PROXY', '')),
   rpcMaxRetries: int('RPC_MAX_RETRIES', 4),
 
   // --- Price history provider ---

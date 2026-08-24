@@ -45,6 +45,17 @@ jobs:
           PGSSLMODE: disable
         run: npm run test:coverage 2>&1 | grep -E "all files|\.js\s+\|" || true
 
+  worker-image:
+    # Render builds this image on deploy for BOTH atlas-api and atlas-sync, so
+    # a Dockerfile that no longer builds would break the next API deploy long
+    # after the PR that broke it merged. Build-only: nothing runs the image.
+    name: Server — worker/API Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build server/Dockerfile.worker
+        run: docker build -f server/Dockerfile.worker server
+
   web:
     name: Web — tests + production build
     runs-on: ubuntu-latest
