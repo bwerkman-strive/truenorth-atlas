@@ -5,24 +5,31 @@
 #   scripts/scratch-db.sh start|stop|status
 #
 # Uses `docker compose up -d db` when Docker is available; otherwise falls
-# back to a local Homebrew postgresql@16 instance with the same contract:
+# back to a local Homebrew postgresql@18 instance with the same contract:
 #   postgres://atlas:atlas@localhost:5433/atlas_test
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CMD="${1:-start}"
 PORT=5433
-DATA_DIR="${TN_SCRATCH_PGDATA:-$HOME/.local/state/truenorth-atlas/pgdata}"
+PG_MAJOR=18
+# Data dir is suffixed with the major version: the scratch DB is throwaway,
+# so a version bump provisions fresh instead of tripping pg_ctl on an
+# incompatible old cluster. Stale pgdata* dirs can simply be deleted.
+DATA_DIR="${TN_SCRATCH_PGDATA:-$HOME/.local/state/truenorth-atlas/pgdata-$PG_MAJOR}"
 
 have_docker() { command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; }
 
 pgbin() {
   local prefix
-  prefix="$(brew --prefix postgresql@16 2>/dev/null)" || {
-    echo "Neither Docker nor Homebrew postgresql@16 found." >&2
-    echo "Install one:  brew install postgresql@16   (or Docker Desktop / colima)" >&2
+  # brew --prefix succeeds for formulae that were never installed, so check
+  # for an actual binary rather than trusting its exit code.
+  prefix="$(brew --prefix postgresql@$PG_MAJOR 2>/dev/null)"
+  if [ -z "$prefix" ] || [ ! -x "$prefix/bin/initdb" ]; then
+    echo "Neither Docker nor Homebrew postgresql@$PG_MAJOR found." >&2
+    echo "Install one:  brew install postgresql@$PG_MAJOR   (or Docker Desktop / colima)" >&2
     exit 1
-  }
+  fi
   echo "$prefix/bin"
 }
 
@@ -32,7 +39,9 @@ case "$CMD" in
       exec docker compose -f "$ROOT/docker-compose.yml" up -d db
     fi
     BIN="$(pgbin)"
-    if [ ! -d "$DATA_DIR" ]; then
+    # PG_VERSION, not the directory, marks a usable cluster: a failed initdb
+    # can leave an empty data dir behind, which must not block the retry.
+    if [ ! -s "$DATA_DIR/PG_VERSION" ]; then
       mkdir -p "$DATA_DIR"
       "$BIN/initdb" -D "$DATA_DIR" -U atlas --pwfile=<(echo atlas) -A md5 --no-locale -E UTF8 >/dev/null
     fi
