@@ -397,7 +397,7 @@ button { font-family: inherit; }
 .chartbox { position: relative; }
 .chart-watermark {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 5; pointer-events: none; user-select: none;
-  font-family: var(--font-ui); font-weight: 600; font-size: 12px; letter-spacing: var(--tracking-label);
+  font-family: var(--font-ui); font-weight: 600; font-size: 13.5px; letter-spacing: var(--tracking-label);
   color: var(--starbright); opacity: 0.3;
 }
 .chart-watermark em { font-style: normal; color: var(--orange); }
@@ -476,7 +476,7 @@ button { font-family: inherit; }
   .nl-group input { flex: 1; min-width: 0; }
   .nl-chart-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   .foot-subscribe .sub-form { max-width: none; }
-  .chart-watermark { font-size: 10.5px; }
+  .chart-watermark { font-size: 12px; }
 }
 
 /* --- Compact phones --- */
