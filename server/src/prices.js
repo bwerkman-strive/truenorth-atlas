@@ -44,10 +44,16 @@ async function fetchCoinbase(startISO, endISO) {
   return rows.map(([t, , , , close]) => ({ day: dayStr(new Date(t * 1000)), close }));
 }
 
-// Providers may legitimately revise a candle while it finalizes; beyond that
-// window a stored close is IMMUTABLE. Every UTXO's cost basis was stamped from
-// the close at ingestion time and spends re-read this table, so a silent
-// historical revision desyncs the two and corrupts realized cap permanently.
+// Providers may legitimately revise a candle while it finalizes; within that
+// window a stored close may still settle. Beyond it, and for ANY day the
+// metrics engine has already finalized, a stored close is IMMUTABLE. Every
+// UTXO's cost basis was stamped from the close at ingestion time and spends
+// re-read this table, so a silent revision desyncs the two and corrupts
+// realized cap permanently. The finalized-day check exists because the
+// window alone is not enough: day N finalizes within the hour after it ends,
+// while providers can settle its candle for days after (2026-08-23 incident:
+// a settled revision of the prior close left every later spend of that day's
+// coins deducting a different value than their creation credited).
 // Refusals are loud (error log) but non-fatal: one bad provider row must not
 // wedge the whole price sync.
 const REVISION_WINDOW_DAYS = 5;
@@ -59,16 +65,34 @@ export async function upsertPrices(rows, log) {
     [rows.map(r => r.day)]);
   const stored = new Map(existing.rows.map(r => [r.day, Number(r.close_usd)]));
   const revisable = dayStr(new Date(Date.now() - REVISION_WINDOW_DAYS * 86400e3));
+  // The current UTC day has no close yet: providers report a live, mutating
+  // value for the in-progress candle. Letting it into the table breaks the
+  // tip's provisional-pricing design (same-day spends must see the same
+  // stable value their creation was credited at; see the 2026-08-23
+  // reconciliation incident). Skipping it is the normal steady state at the
+  // tip, not an error.
+  const today = dayStr(new Date());
+  const fin = await pool.query(
+    `SELECT value FROM chain_state WHERE key='last_metrics_day_epoch'`);
+  const finalizedDay = fin.rows.length
+    ? dayStr(new Date(Number(fin.rows[0].value) * 86400e3)) : null;
 
   const accepted = [];
   for (const r of rows) {
+    if (r.day >= today) continue; // in-progress candle, never storable
     const close = Number(r.close);
     if (!Number.isFinite(close) || close < 0) {
       log?.error({ day: r.day, close: r.close }, 'price guard: refusing non-finite/negative close');
       continue;
     }
     const cur = stored.get(r.day);
-    if (cur !== undefined && r.day < revisable && Math.abs(close - cur) > Math.abs(cur) * 1e-9) {
+    const differs = cur !== undefined && Math.abs(close - cur) > Math.abs(cur) * 1e-9;
+    if (differs && finalizedDay && r.day <= finalizedDay) {
+      log?.error({ day: r.day, stored: cur, incoming: close },
+        'price guard: refusing revision of a metrics-finalized close (closes are immutable)');
+      continue;
+    }
+    if (differs && r.day < revisable) {
       log?.error({ day: r.day, stored: cur, incoming: close },
         'price guard: refusing revision of a finalized close (closes are immutable)');
       continue;
