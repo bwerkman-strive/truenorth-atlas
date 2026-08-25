@@ -187,27 +187,47 @@ EOF
     tflags=(); for t in "${CHAIN_TABLES[@]}"; do tflags+=(-t "$t"); done
     "$PGBIN/pg_dump" "$LOCAL_URL" -Fc -Z1 --no-owner --no-privileges "${tflags[@]}" -f "$PUSH_DUMP"
     ls -lh "$PUSH_DUMP"
-    echo "[2/5] Dropping Render utxos indexes for fast load..."
+    echo "[2/5] Reloading Render chain tables, small site-critical ones first..."
+    # Blast-radius rules, learned from the 2026-08-25 03:45 failure (a DNS
+    # outage killed the utxos load after everything was already truncated,
+    # leaving the site's data gutted until the next night):
+    #   - each table is truncated immediately before ITS OWN load, never up
+    #     front, so a mid-push death leaves later tables stale but present;
+    #   - small site-critical tables (chain_state, prices, metrics_daily,
+    #     blocks) land in the first seconds; utxos goes LAST, so a failure in
+    #     the hours-long phase degrades only the explorer, not the dashboard;
+    #   - retries back off exponentially to ~10 min: the usual cause is a
+    #     network blip measured in minutes, not seconds.
+    # Order constraints: blocks before block_agg (FK); truncating blocks
+    # CASCADEs into block_agg, which is fine because block_agg reloads right
+    # after. A table's COPY is one transaction: a failed load rolls back to
+    # its truncated-empty state, so retrying the same table is always safe.
+    load_table() {
+      local t="$1" attempt=1 wait=30
+      PGSSLMODE="$RENDER_SSL" psql "$RURL" -q -c "TRUNCATE $t CASCADE;"
+      while :; do
+        echo "  loading $t (attempt $attempt)..."
+        if PGSSLMODE="$RENDER_SSL" "$PGBIN/pg_restore" -d "$RURL" --data-only --no-owner -t "$t" "$PUSH_DUMP"; then
+          return 0
+        fi
+        if [[ $attempt -ge 6 ]]; then
+          echo "GIVING UP on $t after $attempt attempts; earlier tables are"
+          echo "loaded, later tables keep their previous (stale) contents."
+          return 1
+        fi
+        echo "  $t failed; retrying in ${wait}s..."; sleep "$wait"
+        attempt=$((attempt + 1)); wait=$((wait * 2)); [[ $wait -gt 600 ]] && wait=600
+      done
+    }
+    for t in chain_state prices metrics_daily blocks block_agg day_active_addresses; do
+      load_table "$t" || exit 1
+    done
+    echo "[3/5] Dropping Render utxos indexes, then the long utxos load..."
     PGSSLMODE="$RENDER_SSL" psql "$RURL" -q \
       -c "DROP INDEX IF EXISTS utxos_address_live;" \
       -c "DROP INDEX IF EXISTS utxos_spent_height_idx;" \
       -c "ALTER TABLE utxos DROP CONSTRAINT IF EXISTS utxos_pkey;"
-    echo "[3/5] Truncating Render chain tables and reloading (bandwidth-bound)..."
-    PGSSLMODE="$RENDER_SSL" psql "$RURL" -q \
-      -c "TRUNCATE blocks, block_agg, utxos, day_active_addresses, chain_state, metrics_daily, prices CASCADE;"
-    # A table's COPY is one transaction: a failed load rolls back to empty,
-    # so retrying the same table is always safe.
-    for t in blocks block_agg utxos day_active_addresses chain_state metrics_daily prices; do
-      loaded=0
-      for attempt in 1 2 3; do
-        echo "  loading $t (attempt $attempt)..."
-        if PGSSLMODE="$RENDER_SSL" "$PGBIN/pg_restore" -d "$RURL" --data-only --no-owner -t "$t" "$PUSH_DUMP"; then
-          loaded=1; break
-        fi
-        echo "  $t failed; retrying in 20s..."; sleep 20
-      done
-      [[ $loaded -eq 1 ]] || { echo "GIVING UP on $t after 3 attempts."; exit 1; }
-    done
+    load_table utxos || exit 1
     echo "[4/5] Rebuilding Render utxos indexes (long on a big set)..."
     PGSSLMODE="$RENDER_SSL" psql "$RURL" -q \
       -c "ALTER TABLE utxos ADD PRIMARY KEY (txid, vout);" \
