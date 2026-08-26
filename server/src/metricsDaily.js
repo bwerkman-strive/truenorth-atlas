@@ -3,6 +3,7 @@
 // precise end-of-day UTXO set.
 import { pool, getState, setState } from './db.js';
 import { config } from './config.js';
+import { bustPriceCache } from './prices.js';
 // Band labels live in the catalog (the single source of truth) so the UI's
 // display order and the JSONB keys written here can never drift apart.
 import { WAVE_LABELS, BAL_LABELS } from './catalog.js';
@@ -111,6 +112,10 @@ async function repriceProvisionalDay(day, price, log) {
     await client.query(`DELETE FROM chain_state WHERE key = $1`, ['provisional:' + day]);
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+  // The in-process cache may still hold the pinned provisional value; from
+  // here on priceForDay(day) must answer with the finalized close the rows
+  // were just re-stamped to.
+  bustPriceCache();
 }
 
 export async function snapshotAndRollupDay(day, log) {
