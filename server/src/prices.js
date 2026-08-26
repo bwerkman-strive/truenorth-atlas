@@ -179,6 +179,29 @@ export async function syncPrices(log) {
 const priceCache = new Map();
 export async function priceForDay(day) {
   if (priceCache.has(day)) return priceCache.get(day);
+  // A provisional day answers with its FROZEN fallback value for as long as
+  // the flag exists, even after the real close lands in the table. Creation
+  // credits and spend deductions for the same coin must always see the same
+  // number: the 2026-08-25 incident put $26M of drift into the realized-cap
+  // counter because coins credited at the fallback were deducted at the
+  // settled close during a catch-up that crossed the day boundary.
+  // repriceProvisionalDay moves the books to the true close atomically at
+  // finalization, deletes the flag, and busts this cache.
+  const prov = await pool.query(
+    'SELECT value FROM chain_state WHERE key = $1', ['provisional:' + day]);
+  if (prov.rows.length) {
+    const pinned = Number(prov.rows[0].value);
+    // Flags written before the value was stored carry the literal 1 (and a
+    // real tip-era price can never be <= 1): recompute and persist.
+    if (pinned > 1) { priceCache.set(day, pinned); return pinned; }
+    const p = await pool.query(
+      'SELECT close_usd FROM prices WHERE day <= $1 ORDER BY day DESC LIMIT 1', [day]);
+    const v = p.rows.length ? Number(p.rows[0].close_usd) : 0;
+    await pool.query(`UPDATE chain_state SET value = $2 WHERE key = $1`,
+      ['provisional:' + day, v]);
+    priceCache.set(day, v);
+    return v;
+  }
   const r = await pool.query('SELECT close_usd FROM prices WHERE day=$1', [day]);
   if (!r.rows.length) {
     // Tip block on a brand-new UTC day before the daily candle exists: use the
@@ -192,14 +215,14 @@ export async function priceForDay(day) {
     const p = await pool.query(
       'SELECT close_usd FROM prices WHERE day <= $1 ORDER BY day DESC LIMIT 1', [day]);
     const v = p.rows.length ? Number(p.rows[0].close_usd) : 0;
-    // Durable marker: cost bases stamped from this fallback are PROVISIONAL.
-    // Day finalization (metricsDaily.repriceProvisionalDay) re-stamps them
-    // with the true close once it exists, keeping the realized-cap books
-    // exact at the tip. chain_state survives worker restarts, so a mid-day
-    // restart cannot orphan half-provisional stamps.
+    // Durable marker: cost bases stamped from this fallback are PROVISIONAL,
+    // and the marker CARRIES the pinned value so every later read (across
+    // worker restarts and catch-ups) answers identically until finalization.
+    // Day finalization (metricsDaily.repriceProvisionalDay) re-stamps live
+    // rows with the true close, deletes the flag, and busts the price cache.
     await pool.query(
-      `INSERT INTO chain_state (key, value) VALUES ($1, 1) ON CONFLICT (key) DO NOTHING`,
-      ['provisional:' + day]);
+      `INSERT INTO chain_state (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`,
+      ['provisional:' + day, v]);
     priceCache.set(day, v);
     return v;
   }
