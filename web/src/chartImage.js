@@ -146,7 +146,26 @@ export async function chartToPngBlob(container, { title = '', value = '', scale 
   const legend = readLegend(container);
   const PAD = 20;
   const headerH = title ? 40 : 0;
-  const legendH = legend.length ? 14 + Math.ceil(legend.length / 3) * 20 : 0;
+  // Lay the legend out into rows up front (measured with the same font the
+  // drawing pass uses) so the canvas height is exact and each row can be
+  // centered under the plot, matching the on-screen .cycle-key flex row.
+  const measure = document.createElement('canvas').getContext('2d');
+  measure.font = `12px ${UI}`;
+  const legendRows = [];
+  {
+    let row = [], rowW = 0;
+    for (const item of legend) {
+      const w = (item.color ? 16 : 0) + measure.measureText(item.text).width;
+      if (row.length && rowW + 18 + w > cw) {
+        legendRows.push({ items: row, width: rowW });
+        row = []; rowW = 0;
+      }
+      rowW += (row.length ? 18 : 0) + w;
+      row.push({ ...item, w });
+    }
+    if (row.length) legendRows.push({ items: row, width: rowW });
+  }
+  const legendH = legendRows.length ? 14 + legendRows.length * 20 : 0;
   const W = cw + PAD * 2;
   const H = headerH + ch + legendH + PAD * 2;
 
@@ -185,10 +204,12 @@ export async function chartToPngBlob(container, { title = '', value = '', scale 
 
   ctx.drawImage(img, PAD, y, cw, ch);
 
-  // Watermark: centred on the plot itself, matching the on-screen placement.
+  // Watermark: centred on the plot itself, matching the on-screen treatment
+  // (.chart-watermark: 600 weight, 15px, 0.1em tracking).
   ctx.save();
   ctx.globalAlpha = 0.3;
-  ctx.font = `700 12px ${UI}`;
+  ctx.font = `600 15px ${UI}`;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '1.5px';
   ctx.textBaseline = 'middle';
   const lockup = 'TRUE NORTH ';
   const wl = ctx.measureText(lockup).width;
@@ -202,22 +223,22 @@ export async function chartToPngBlob(container, { title = '', value = '', scale 
   ctx.restore();
 
   y += ch + 14;
-  if (legend.length) {
+  if (legendRows.length) {
     ctx.font = `12px ${UI}`;
     ctx.textBaseline = 'middle';
-    let x = PAD;
-    for (const item of legend) {
-      const tw = ctx.measureText(item.text).width;
-      const need = (item.color ? 16 : 0) + tw + 18;
-      if (x > PAD && x + need > W - PAD) { x = PAD; y += 20; }
-      if (item.color) {
-        ctx.fillStyle = item.color;
-        ctx.fillRect(x, y + 3, 9, 9);
-        x += 16;
+    for (const row of legendRows) {
+      let x = PAD + Math.max(0, (cw - row.width) / 2);
+      for (const item of row.items) {
+        if (item.color) {
+          ctx.fillStyle = item.color;
+          ctx.fillRect(x, y + 3, 9, 9);
+          x += 16;
+        }
+        ctx.fillStyle = dim;
+        ctx.fillText(item.text, x, y + 7);
+        x += item.w - (item.color ? 16 : 0) + 18;
       }
-      ctx.fillStyle = dim;
-      ctx.fillText(item.text, x, y + 7);
-      x += tw + 18;
+      y += 20;
     }
   }
 
