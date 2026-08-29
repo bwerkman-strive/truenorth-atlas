@@ -494,18 +494,22 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
         )}
         {view === 'series' && !err && rows.length > 0 && metric.kind === 'stacked' && (
           <div className="chartwrap"><ResponsiveContainer width="100%" height="100%">
-            {/* reverseStackOrder puts the first-declared band at the TOP, so
-                the stack reads smallest to largest top-to-bottom, matching
-                the tooltip's declaration-order rows. */}
+            {/* Bands are declared LONGEST-first: reverseStackOrder puts the
+                first-declared band at the TOP, so the stack runs longest at
+                the top down to shortest at the bottom, and the tooltip's
+                declaration-order rows read the same way (top row = top band).
+                Colors stay keyed to the band's catalog index so each band
+                keeps its color regardless of declaration order. */}
             <AreaChart data={rows} stackOffset="expand" reverseStackOrder margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <XAxis dataKey="day" tickFormatter={fmtDay} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} minTickGap={60} />
               <YAxis tickFormatter={(v) => (v * 100).toFixed(0) + '%'} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} />
               <Tooltip {...TOOLTIP_PROPS}
                 labelFormatter={fmtDay} formatter={(v, n) => [(v * 100).toFixed(2) + '%', n]} />
-              {waveKeys.map((k, i) => (
-                <Area key={k} dataKey={k} stackId="1" stroke="none"
-                  fill={WAVE_COLORS[i % WAVE_COLORS.length]} fillOpacity={0.85} isAnimationActive={false} />
-              ))}
+              {[...waveKeys].reverse().map((k, j) => {
+                const i = waveKeys.length - 1 - j;
+                return <Area key={k} dataKey={k} stackId="1" stroke="none"
+                  fill={WAVE_COLORS[i % WAVE_COLORS.length]} fillOpacity={0.85} isAnimationActive={false} />;
+              })}
             </AreaChart>
           </ResponsiveContainer></div>
         )}
