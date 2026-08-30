@@ -496,10 +496,10 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
           <div className="chartwrap"><ResponsiveContainer width="100%" height="100%">
             {/* Bands are declared LONGEST-first: reverseStackOrder puts the
                 first-declared band at the TOP, so the stack runs longest at
-                the top down to shortest at the bottom. The tooltip is
-                deliberately the OTHER way: itemSorter pins its rows to
-                catalog order (shortest first), independent of declaration
-                order, per explicit product direction (2026-08-30). Colors
+                the top down to shortest at the bottom. The tooltip reads
+                longest first (top to bottom), pinned via itemSorter and
+                independent of declaration order, per explicit product
+                direction (2026-08-30, revised same day). Colors
                 stay keyed to the band's catalog index so each band keeps
                 its color regardless of declaration order. */}
             <AreaChart data={rows} stackOffset="expand" reverseStackOrder margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -507,7 +507,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
               <YAxis tickFormatter={(v) => (v * 100).toFixed(0) + '%'} tick={{ fill: 'var(--text-faint)', fontSize: 11 }} />
               <Tooltip {...TOOLTIP_PROPS}
                 labelFormatter={fmtDay} formatter={(v, n) => [(v * 100).toFixed(2) + '%', n]}
-                itemSorter={(item) => waveKeys.indexOf(item.dataKey)} />
+                itemSorter={(item) => -waveKeys.indexOf(item.dataKey)} />
               {[...waveKeys].reverse().map((k, j) => {
                 const i = waveKeys.length - 1 - j;
                 return <Area key={k} dataKey={k} stackId="1" stroke="none"
