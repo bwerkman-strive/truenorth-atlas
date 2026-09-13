@@ -2,8 +2,17 @@
 // absolute origin via VITE_API_URL when the static site and API live apart.
 const BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
+// Backstop so a stalled request surfaces as an error instead of a spinner
+// that never resolves; the server's own explorer deadline is far shorter.
+const REQUEST_TIMEOUT_MS = 60_000;
+
 async function get(path) {
-  const res = await fetch(BASE + path);
+  let res;
+  try {
+    res = await fetch(BASE + path, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  } catch (e) {
+    throw new Error(e?.name === 'TimeoutError' ? 'request timed out' : (e?.message || 'network error'));
+  }
   if (!res.ok) throw new Error(`API ${res.status}`);
   return res.json();
 }

@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { api, fmt, compact } from '../api.js';
 
 const btc = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 8 }) + ' BTC');
-const sat2btc = (s) => btc(Number(s) / 1e8);
+const sat2btc = (s) => (s === null || s === undefined ? '—' : btc(Number(s) / 1e8));
 const when = (t) => {
   if (!t) return '—';
   const iso = new Date(t * 1000).toISOString();
@@ -173,16 +173,28 @@ function TxCard({ t }) {
   );
 }
 
+// While the API is still waiting on the node (rpc_pending), it answers with the
+// indexed summary right away; poll a few more times for the transaction list.
+const PENDING_POLL_MS = 3000;
+const PENDING_POLLS = 10;
+
 function BlockView({ id }) {
   const [b, setB] = useState(null);
   const [err, setErr] = useState(null);
   const [page, setPage] = useState(0);
   useEffect(() => {
+    let alive = true, timer;
     setErr(null);
-    api.explorerBlock(id, page * TX_PAGE).then(setB).catch(e => setErr(e.message));
+    const load = (attempt) => api.explorerBlock(id, page * TX_PAGE).then(res => {
+      if (!alive) return;
+      setB(res);
+      if (res.rpc_pending && attempt < PENDING_POLLS) timer = setTimeout(() => load(attempt + 1), PENDING_POLL_MS);
+    }).catch(e => { if (alive) setErr(e.message); });
+    load(0);
+    return () => { alive = false; clearTimeout(timer); };
   }, [id, page]);
 
-  if (err) return <div className="wrap"><div className="err">Block not found: {err}</div></div>;
+  if (err) return <div className="wrap"><div className="err">Block unavailable: {err}</div></div>;
   if (!b) return <div className="wrap"><div className="loading">Loading block…</div></div>;
   const d = b.detail;
   const vsize = b.weight ? Math.ceil(b.weight / 4) : null;
@@ -192,10 +204,10 @@ function BlockView({ id }) {
     <div className="wrap">
       <div className="detail-hd">
         <div className="crumb"><a href="#/explorer">← Explorer</a> / Block</div>
-        <h1>Block {b.height.toLocaleString()}</h1>
+        <h1>Block {b.height != null ? b.height.toLocaleString() : '…'}</h1>
       </div>
       <div className="xcard">
-        <Row label="Hash" monoValue>{b.hash}</Row>
+        <Row label="Hash" monoValue>{b.hash ?? '—'}</Row>
         <Row label="Time">{when(b.time)}</Row>
         {b.confirmations != null &&
           <Row label="Confirmations">{b.confirmations.toLocaleString()}</Row>}
@@ -242,7 +254,13 @@ function BlockView({ id }) {
           )}
         </>
       )}
-      {!b.rpc && (
+      {!b.rpc && b.rpc_pending && (
+        <div className="syncnote">
+          Summary served from the local index. The transaction listing is still loading from
+          the node and will appear here when it arrives.
+        </div>
+      )}
+      {!b.rpc && !b.rpc_pending && (
         <div className="syncnote">
           Summary served from the local index. Full transaction listings require the API's
           node connection, which is currently unavailable.
@@ -258,11 +276,18 @@ function TxView({ txid }) {
   const [err, setErr] = useState(null);
   const [scripts, setScripts] = useState(false);
   useEffect(() => {
+    let alive = true, timer;
     setT(null); setErr(null); setScripts(false);
-    api.explorerTx(txid).then(setT).catch(e => setErr(e.message));
+    const load = (attempt) => api.explorerTx(txid).then(res => {
+      if (!alive) return;
+      setT(res);
+      if (res.rpc_pending && attempt < PENDING_POLLS) timer = setTimeout(() => load(attempt + 1), PENDING_POLL_MS);
+    }).catch(e => { if (alive) setErr(e.message); });
+    load(0);
+    return () => { alive = false; clearTimeout(timer); };
   }, [txid]);
 
-  if (err) return <div className="wrap"><div className="err">Transaction not found: {err}</div></div>;
+  if (err) return <div className="wrap"><div className="err">Transaction unavailable: {err}</div></div>;
   if (!t) return <div className="wrap"><div className="loading">Loading transaction…</div></div>;
   const unconfirmed = t.block_height === null && t.rpc;
   return (

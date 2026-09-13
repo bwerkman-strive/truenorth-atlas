@@ -23,16 +23,49 @@ const HEIGHT = /^\d{1,9}$/;
 // Mainnet address shapes: P2PKH (1…), P2SH (3…), bech32 (bc1q…), taproot (bc1p…)
 const ADDR = /^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[qp][a-z0-9]{38,58})$/;
 
+// Explorer RPC calls answer a person holding a spinner: one attempt each, no
+// exponential backoff. Slow-but-alive fetches are handled by the deadline
+// below, and the frontend's re-poll is the retry.
+const NO_RETRY = { retries: 0 };
+
 let rpcAvailable = null; // tri-state: null=unknown, true/false=probed
-async function rpcUp() {
+let rpcProbe = null;     // in-flight probe, shared by concurrent requests
+function rpcUp() {
   if (rpcAvailable !== null) return rpcAvailable;
   if (!config.rpcUser && !config.rpcPass && config.rpcUrl.includes('127.0.0.1')) {
     rpcAvailable = false; return false; // clearly unconfigured
   }
-  try { await rpc.getBestBlockHash(); rpcAvailable = true; }
-  catch { rpcAvailable = false; }
-  setTimeout(() => { rpcAvailable = null; }, 60_000).unref?.(); // re-probe every minute
-  return rpcAvailable;
+  if (!rpcProbe) {
+    rpcProbe = rpc.getBestBlockHash(NO_RETRY).then(() => true, () => false).then((ok) => {
+      rpcAvailable = ok; rpcProbe = null;
+      setTimeout(() => { rpcAvailable = null; }, 60_000).unref?.(); // re-probe every minute
+      return ok;
+    });
+  }
+  return rpcProbe;
+}
+
+// Bound how long a request waits on the node. Past the deadline the caller
+// answers DB-only with rpc_pending: true; the enrichment promise keeps running
+// (and, for blocks, lands in the cache) so the frontend's next poll succeeds.
+// Measured motivation: a full modern block is ~13 MB at getblock verbosity 3
+// and did not arrive at all over Tor within 400 s, which left the explorer
+// on "Loading block…" indefinitely.
+const PENDING = Symbol('rpc pending');
+function withDeadline(promise, ms = config.explorerRpcDeadlineMs) {
+  let timer;
+  const deadline = new Promise((resolve) => { timer = setTimeout(resolve, ms, PENDING); timer.unref?.(); });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
+// Share one in-flight promise per key so concurrent requests for the same
+// block (React double-effects, re-polls) do not multiply Tor fetches.
+const inflight = new Map();
+function dedupe(key, fn) {
+  if (inflight.has(key)) return inflight.get(key);
+  const p = fn().finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
 }
 
 // ---------------------------------------------------------------------------
@@ -76,16 +109,53 @@ function txSummary(t) {
   };
 }
 
-// Serialized-block cache: confirmed blocks are immutable, and a verbosity-3
-// fetch is expensive (especially over Tor), so keep the derived header +
-// tx summaries for recently viewed blocks. Tip blocks (no nextblockhash yet)
-// are never cached — their nextblockhash is still changing.
-const blockCache = new Map(); // hash -> { node, txsAll }
+// Block cache: header + txids per hash, plus the tx-summary pages viewed so
+// far. Blocks are immutable by hash, so tip blocks are cached too; only their
+// nextblockhash is refreshed (getblockheader, a few hundred bytes) on re-view.
+// The per-page shape is what keeps Tor traffic small: a verbosity-1 block is
+// ~0.4 MB and a batched 25-tx page ~70 KB, versus ~13 MB for verbosity 3.
+const blockCache = new Map(); // hash -> { node, pages: Map<txStart, txSummary[]> }
 const BLOCK_CACHE_MAX = 12;
 function blockCachePut(hash, entry) {
   blockCache.delete(hash);
   blockCache.set(hash, entry);
   if (blockCache.size > BLOCK_CACHE_MAX) blockCache.delete(blockCache.keys().next().value);
+}
+
+async function nodeBlock(hash) {
+  const cached = blockCache.get(hash);
+  if (cached) {
+    if (cached.node.nextblockhash == null) { // cached while it was the tip
+      const hdr = await rpc.getBlockHeader(hash, NO_RETRY).catch(() => null);
+      if (hdr?.nextblockhash) cached.node.nextblockhash = hdr.nextblockhash;
+    }
+    return cached;
+  }
+  return dedupe('block:' + hash, async () => {
+    const b = await rpc.getBlockV1(hash, NO_RETRY);
+    const node = {
+      hash: b.hash, height: b.height, time: b.time, size: b.size, weight: b.weight,
+      version: b.version, merkleroot: b.merkleroot, nonce: b.nonce, bits: b.bits,
+      difficulty: b.difficulty, mediantime: b.mediantime ?? null,
+      previousblockhash: b.previousblockhash,
+      nextblockhash: b.nextblockhash ?? null,
+      txids: b.tx.map(t => (typeof t === 'string' ? t : t.txid)),
+    };
+    const entry = { node, pages: new Map() };
+    blockCachePut(hash, entry);
+    return entry;
+  });
+}
+
+async function nodeTxPage(entry, txStart) {
+  if (entry.pages.has(txStart)) return entry.pages.get(txStart);
+  const ids = entry.node.txids.slice(txStart, txStart + TX_PAGE);
+  if (!ids.length) return [];
+  return dedupe(`txs:${entry.node.hash}:${txStart}`, async () => {
+    const txs = (await rpc.getRawTransactionsInBlock(ids, entry.node.hash, NO_RETRY)).map(txSummary);
+    entry.pages.set(txStart, txs);
+    return txs;
+  });
 }
 
 async function blockFromDb(idOrHash) {
@@ -100,31 +170,19 @@ async function blockFromDb(idOrHash) {
 
 export async function getBlock(idOrHash, txStart = 0) {
   const db = await blockFromDb(idOrHash);
-  let node = null, txsAll = null;
-  if (await rpcUp()) {
-    try {
-      const hash = db?.hash ?? (HEIGHT.test(idOrHash)
-        ? await rpc.getBlockHash(Number(idOrHash))
-        : idOrHash.toLowerCase());
-      const cached = blockCache.get(hash);
-      if (cached) {
-        ({ node, txsAll } = cached);
-      } else {
-        const b = await rpc.getBlockV3(hash);
-        node = {
-          hash: b.hash, height: b.height, time: b.time, size: b.size, weight: b.weight,
-          version: b.version, merkleroot: b.merkleroot, nonce: b.nonce, bits: b.bits,
-          difficulty: b.difficulty, mediantime: b.mediantime ?? null,
-          previousblockhash: b.previousblockhash,
-          nextblockhash: b.nextblockhash ?? null,
-          txids: b.tx.map(t => t.txid),
-        };
-        txsAll = b.tx.map(txSummary);
-        if (node.nextblockhash) blockCachePut(hash, { node, txsAll });
-      }
-    } catch { /* fall through to DB-only */ }
-  }
-  if (!db && !node) return null;
+  let node = null, txs = null, pending = false;
+  const enrich = async () => {
+    if (!(await rpcUp())) return null;
+    const hash = db?.hash ?? (HEIGHT.test(idOrHash)
+      ? await rpc.getBlockHash(Number(idOrHash), NO_RETRY)
+      : idOrHash.toLowerCase());
+    const entry = await nodeBlock(hash);
+    return { node: entry.node, txs: await nodeTxPage(entry, txStart) };
+  };
+  const got = await withDeadline(enrich().catch(() => null)); // any RPC failure -> DB-only
+  if (got === PENDING) pending = true;
+  else if (got) ({ node, txs } = got);
+  if (!db && !node && !pending) return null;
   // Lazy backfill: rows synced before the size columns existed get them the
   // first time the block is viewed with RPC available.
   if (node && db && db.size_bytes == null && node.size != null) {
@@ -133,23 +191,26 @@ export async function getBlock(idOrHash, txStart = 0) {
       [node.size, node.weight ?? null, node.height]).catch(() => {});
     db.size_bytes = node.size; db.weight = node.weight ?? null;
   }
-  const height = node?.height ?? db.height;
+  // Beyond our synced tip and still waiting on the node: answer with what the
+  // request itself told us so the client can render a shell and re-poll.
+  const height = node?.height ?? db?.height ?? (HEIGHT.test(idOrHash) ? Number(idOrHash) : null);
   const tip = await tipHeight();
   return {
     height,
-    hash: node?.hash ?? db.hash,
-    time: node?.time ?? Number(db.time),
+    hash: node?.hash ?? db?.hash ?? (HEX64.test(idOrHash) ? idOrHash.toLowerCase() : null),
+    time: node?.time ?? (db ? Number(db.time) : null),
     tx_count: node?.txids?.length ?? db?.tx_count ?? null,
     size_bytes: node?.size ?? db?.size_bytes ?? null,
     weight: node?.weight ?? db?.weight ?? null,
-    confirmations: tip != null && tip >= height ? tip - height + 1 : null, // null: beyond our synced tip
+    confirmations: tip != null && height != null && tip >= height ? tip - height + 1 : null, // null: beyond our synced tip
     subsidy_sat: db ? Number(db.subsidy_sat) : null,
     fees_sat: db ? Number(db.fees_sat) : null,
     difficulty: node?.difficulty ?? (db ? Number(db.difficulty) : null),
-    detail: node,           // null when RPC unreachable
-    txs: txsAll ? txsAll.slice(txStart, txStart + TX_PAGE) : null,
+    detail: node,           // null when RPC unreachable or still pending
+    txs,                    // null likewise
     tx_start: txStart,
     rpc: !!node,
+    rpc_pending: pending,   // true: the node fetch outlived the deadline and is still running; poll again
   };
 }
 
@@ -163,6 +224,15 @@ async function blockHashForTx(txid) {
   return r.rows[0]?.hash ?? null;
 }
 
+// Height of a block we may or may not have synced: our table first, then the
+// node's header (getrawtransaction reports blockhash but not height).
+async function heightForHash(hash) {
+  const r = await pool.query('SELECT height FROM blocks WHERE hash = $1', [hash.toLowerCase()]);
+  if (r.rows[0]) return r.rows[0].height;
+  const hdr = await rpc.getBlockHeader(hash, NO_RETRY).catch(() => null);
+  return hdr?.height ?? null;
+}
+
 export async function getTx(txid) {
   txid = txid.toLowerCase();
   const outsR = await pool.query(
@@ -171,22 +241,25 @@ export async function getTx(txid) {
      FROM utxos WHERE txid = $1 ORDER BY vout`, [Buffer.from(txid, 'hex')]);
   const tracked = outsR.rows;
 
-  let node = null;
-  if (await rpcUp()) {
-    try {
-      // Prefer direct lookup (works if node has txindex=1)…
-      node = await rpc.getRawTransactionVerbose(txid);
-    } catch {
-      // …fall back to fetching by blockhash learned from our UTXO table.
-      const bh = await blockHashForTx(txid);
-      if (bh) {
-        try {
-          const blk = await rpc.getBlockV3(bh);
-          const t = blk.tx.find(x => x.txid === txid);
-          if (t) node = { ...t, blockhash: blk.hash, blocktime: blk.time, blockheight: blk.height };
-        } catch { /* DB-only */ }
-      }
-    }
+  // Blockhash-first: any output still in our UTXO table tells us the block, and
+  // getrawtransaction scoped to a block works on every node (no txindex) and
+  // costs a few KB. Only an untracked tx falls back to the unscoped lookup
+  // (mempool, or txindex if the node has it). Never fetch the whole block.
+  let node = null, pending = false;
+  const enrich = async () => {
+    if (!(await rpcUp())) return null;
+    const bh = tracked.length ? await blockHashForTx(txid) : null;
+    const t = await rpc.getRawTransactionVerbose(txid, bh ?? undefined, NO_RETRY);
+    let blockheight = tracked[0]?.created_height ?? null;
+    if (blockheight == null && t.blockhash) blockheight = await heightForHash(t.blockhash);
+    return { ...t, blockheight };
+  };
+  const got = await withDeadline(enrich().catch(() => null));
+  if (got === PENDING) pending = true;
+  else node = got;
+  if (pending && !tracked.length) {
+    // Nothing local to show yet; hand back a shell the client can poll on.
+    return { ...txShell(txid), rpc_pending: true };
   }
   if (!node && !tracked.length) return null;
 
@@ -257,6 +330,17 @@ export async function getTx(txid) {
           spent_txid: t.spent_txid ?? null,
         })),
     rpc: !!node,
+    rpc_pending: pending,
+  };
+}
+
+// Same key set as a full getTx response, every node-only field null.
+function txShell(txid) {
+  return {
+    txid, block_height: null, block_hash: null, time: null, confirmations: null,
+    coinbase: false, size: null, vsize: null, weight: null, version: null, locktime: null,
+    rbf: null, fee_sat: null, fee_rate: null, total_in_btc: null, total_out_btc: null,
+    inputs: null, outputs: [], rpc: false, rpc_pending: false,
   };
 }
 

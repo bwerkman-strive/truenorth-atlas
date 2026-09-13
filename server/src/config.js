@@ -58,6 +58,10 @@ export const config = {
   asoprMinAgeSec: int('ASOPR_MIN_AGE_SECONDS', 3600), // adjusted SOPR: ignore < 1h relays
 
   // --- API server ---
+  // Interactive explorer requests (block / tx detail) answer from the DB alone
+  // after waiting this long on the node, flagged rpc_pending; the node fetch
+  // keeps running into the explorer's cache and the frontend re-polls.
+  explorerRpcDeadlineMs: int('EXPLORER_RPC_DEADLINE_MS', 20000),
   port: int('PORT', 8080),
   corsOrigin: env('CORS_ORIGIN', '*'),                // set to https://tnorth.com in prod
   apiCacheSeconds: int('API_CACHE_SECONDS', 300),

@@ -108,8 +108,9 @@ export const API_ENDPOINTS = [
       ],
       tx_start: 0,
       rpc: true,
+      rpc_pending: false,
     },
-    notes: '404 if the block is beyond the synced tip. 400 for malformed input. Input/output previews inside each tx summary cap at 8 entries; "in_count"/"out_count" carry the true totals. "confirmations" is depth from the synced tip.',
+    notes: '404 if the block is beyond the synced tip. 400 for malformed input. If the node has not answered within the API\'s deadline, the indexed summary is returned at once with "rpc": false and "rpc_pending": true while the fetch continues; poll again for "detail" and "txs". Input/output previews inside each tx summary cap at 8 entries; "in_count"/"out_count" carry the true totals. "confirmations" is depth from the synced tip.',
   },
   {
     method: 'GET',
@@ -150,8 +151,9 @@ export const API_ENDPOINTS = [
         { n: 1, value_btc: 0.0705, address: 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', type: 'v0_p2wpkh', scriptpubkey_asm: 'OP_0 OP_PUSHBYTES_20 e8df01…8f45', spent: true, spent_txid: '3f1a52b7e6c09d84aa0e5b2df1c67a90bb34cd128e56f7d3a1b09c8e4d72f615' },
       ],
       rpc: true,
+      rpc_pending: false,
     },
-    notes: 'Coinbase transactions return "coinbase": true, null fee fields, and inputs: [{ "coinbase": true }]. "confirmations" is 0 for mempool transactions. "spent_txid" identifies the spending transaction while the spend is inside the retention window (recent blocks), otherwise null. Without RPC, outputs still tracked in the UTXO set are returned with "rpc": false and null node-only fields.',
+    notes: 'Coinbase transactions return "coinbase": true, null fee fields, and inputs: [{ "coinbase": true }]. "confirmations" is 0 for mempool transactions. "spent_txid" identifies the spending transaction while the spend is inside the retention window (recent blocks), otherwise null. Without RPC, outputs still tracked in the UTXO set are returned with "rpc": false and null node-only fields. "rpc_pending": true means the node has not answered within the API\'s deadline yet; poll again.',
   },
   {
     method: 'GET',
