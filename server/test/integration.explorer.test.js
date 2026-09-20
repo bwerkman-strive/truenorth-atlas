@@ -14,6 +14,7 @@ import http from 'node:http';
 
 process.env.PGSSLMODE = 'disable';
 process.env.RPC_MAX_RETRIES = '0';
+process.env.EXPLORER_RPC_DEADLINE_MS = '1500'; // the slow-node test below overruns this
 process.env.ADMIN_TOKEN = 'test-admin-secret';
 process.env.PUBLIC_RATE_LIMIT_PER_MIN = '50';
 
@@ -24,7 +25,8 @@ const T0 = Date.parse('2024-06-01T06:00:00Z') / 1000;
 const ADDR1 = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq'; // receives 2 coinbases
 const ADDR2 = '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2';          // receives the spend
 const TX_CB1 = '11'.repeat(32), TX_CB2 = '22'.repeat(32), TX_SPEND = 'dd'.repeat(32);
-const HASH1 = 'e1'.repeat(32), HASH2 = 'e2'.repeat(32);
+const HASH1 = 'e1'.repeat(32), HASH2 = 'e2'.repeat(32), HASH3 = 'e3'.repeat(32);
+const TX_CB3 = '33'.repeat(32);
 
 const BLOCKS = {
   [HASH1]: {
@@ -61,31 +63,77 @@ const BLOCKS = {
       },
     ],
   },
+  // Known to the node only (beyond the synced tip): exercises the node-only
+  // shell and the slow-node deadline without disturbing the two seeded blocks.
+  [HASH3]: {
+    hash: HASH3, height: 3, time: T0 + 1200, mediantime: T0 + 900, size: 285, weight: 1140, version: 1,
+    merkleroot: 'ef'.repeat(32), nonce: 3, bits: '1d00ffff', difficulty: 1,
+    previousblockhash: HASH2,
+    tx: [{
+      txid: TX_CB3, vin: [{ coinbase: '01' }],
+      vout: [{ n: 0, value: 50, scriptPubKey: { type: 'v0_p2wpkh', address: ADDR1 } }],
+    }],
+  },
 };
 
-let getblockCalls = 0; // proves the serialized-block cache short-circuits repeat views
+// Call counters prove the cache/paging strategy: getblock (verbosity 1 for the
+// explorer, 3 for the sync worker), getblockheader (tip refresh) and
+// getrawtransaction batches (one per viewed page).
+let getblockCalls = 0, getblockheaderCalls = 0, getrawtxCalls = 0, batchCalls = 0;
+let v3Payloads = 0; // the explorer must never pull a verbosity-3 block
+let slowBlockMs = 0; // when set, getblock for HASH3 stalls this long
 const mock = http.createServer((req, res) => {
   const chunks = [];
   req.on('data', c => chunks.push(c));
   req.on('end', () => {
-    const body = JSON.parse(Buffer.concat(chunks).toString());
+    const parsed = JSON.parse(Buffer.concat(chunks).toString());
     res.setHeader('content-type', 'application/json');
-    const reply = (result) => res.end(JSON.stringify({ id: body.id, result }));
-    const fail = (code, message) => res.end(JSON.stringify({ id: body.id, error: { code, message } }));
-    switch (body.method) {
-      case 'getbestblockhash': return reply(HASH2);
-      case 'getblockhash': {
-        const h = body.params[0];
-        return h === 1 ? reply(HASH1) : h === 2 ? reply(HASH2) : fail(-8, 'Block height out of range');
+    const isBatch = Array.isArray(parsed);
+    if (isBatch) batchCalls++;
+    // Mirrors Core's getrawtransaction verbosity=2 with a blockhash: the tx
+    // object plus block context; without a blockhash it needs txindex (off here).
+    const rawTx = (txid, blockhash) => {
+      if (!blockhash) return { error: { code: -5, message: 'No such mempool or blockchain transaction (txindex off)' } };
+      const blk = BLOCKS[blockhash];
+      const t = blk?.tx.find(x => x.txid === txid);
+      if (!t) return { error: { code: -5, message: 'No such transaction found in the provided block.' } };
+      return { result: { ...t, blockhash: blk.hash, blocktime: blk.time, confirmations: 1, time: blk.time } };
+    };
+    const one = (body) => {
+      const reply = (result) => ({ id: body.id, result });
+      const fail = (code, message) => ({ id: body.id, error: { code, message } });
+      switch (body.method) {
+        case 'getbestblockhash': return reply(HASH2);
+        case 'getblockhash': {
+          const h = body.params[0];
+          return h === 1 ? reply(HASH1) : h === 2 ? reply(HASH2) : h === 3 ? reply(HASH3)
+            : fail(-8, 'Block height out of range');
+        }
+        case 'getblock': {
+          getblockCalls++;
+          const b = BLOCKS[body.params[0]];
+          if (!b) return fail(-5, 'Block not found');
+          if (body.params[1] === 1) return reply({ ...b, tx: b.tx.map(t => t.txid) });
+          v3Payloads++;
+          return reply(b);
+        }
+        case 'getblockheader': {
+          getblockheaderCalls++;
+          const b = BLOCKS[body.params[0]];
+          if (!b) return fail(-5, 'Block not found');
+          const { tx, ...hdr } = b;
+          return reply(hdr);
+        }
+        case 'getrawtransaction': {
+          getrawtxCalls++;
+          return { id: body.id, ...rawTx(body.params[0], body.params[2]) };
+        }
+        default: return fail(-32601, 'not mocked');
       }
-      case 'getblock': {
-        getblockCalls++;
-        const b = BLOCKS[body.params[0]];
-        return b ? reply(b) : fail(-5, 'Block not found');
-      }
-      case 'getrawtransaction': return fail(-5, 'No such mempool or blockchain transaction (txindex off)');
-      default: return fail(-32601, 'not mocked');
-    }
+    };
+    const out = isBatch ? parsed.map(one) : one(parsed);
+    const stalled = !isBatch && parsed.method === 'getblock' && parsed.params[0] === HASH3 && slowBlockMs;
+    setTimeout(() => res.end(JSON.stringify(out)), stalled ? slowBlockMs : 0);
   });
 });
 await new Promise(r => mock.listen(0, '127.0.0.1', r));
@@ -198,10 +246,13 @@ test('block lookup by height and by hash, RPC-enriched with full txids', async (
   assert.equal((await get('/api/explorer/block/not-a-block')).status, 400);
 });
 
-test('block tx summaries: amounts and fees from the verbosity-3 payload', async () => {
+test('block tx summaries: verbosity-1 block + one batched getrawtransaction page', async () => {
   const b = (await getJson('/api/explorer/block/2')).body;
   assert.equal(b.tx_start, 0);
   assert.equal(b.txs.length, 2);
+  assert.equal(b.rpc, true);
+  assert.equal(b.rpc_pending, false);
+  assert.equal(v3Payloads, 0, 'explorer never pulls a verbosity-3 block');
 
   const [cb, spend] = b.txs;
   assert.equal(cb.txid, TX_CB2);
@@ -230,24 +281,75 @@ test('block tx summaries: amounts and fees from the verbosity-3 payload', async 
   assert.deepEqual(past.txs, []);
 });
 
-test('serialized-block cache: repeat views of a non-tip block skip the node', async () => {
+test('block cache: repeat views skip the node; tip blocks refresh only their header', async () => {
   await getJson(`/api/explorer/block/${HASH1}`); // warm (block 1 has a nextblockhash)
-  const before = getblockCalls;
+  const [g, h, r] = [getblockCalls, getblockheaderCalls, getrawtxCalls];
   const again = (await getJson('/api/explorer/block/1')).body;
-  assert.equal(getblockCalls, before, 'served from cache, no getblock call');
+  assert.equal(getblockCalls, g, 'served from cache, no getblock call');
+  assert.equal(getblockheaderCalls, h, 'a block with a successor needs no header refresh');
+  assert.equal(getrawtxCalls, r, 'viewed page served from cache too');
   assert.equal(again.rpc, true);
   assert.deepEqual(again.detail.txids, [TX_CB1]);
 
-  // The tip block is never cached (its nextblockhash is still changing).
-  const b2 = getblockCalls;
-  await getJson('/api/explorer/block/2');
-  assert.ok(getblockCalls > b2, 'tip block re-fetched');
+  // The tip block's txids and pages are immutable by hash, so they are cached;
+  // only nextblockhash is re-read via getblockheader (bytes, not megabytes).
+  await getJson('/api/explorer/block/2'); // warm
+  const [g2, h2, r2] = [getblockCalls, getblockheaderCalls, getrawtxCalls];
+  const tip = (await getJson('/api/explorer/block/2')).body;
+  assert.equal(getblockCalls, g2, 'tip block body not re-fetched');
+  assert.equal(getrawtxCalls, r2, 'tip page not re-fetched');
+  assert.equal(getblockheaderCalls, h2 + 1, 'tip header refreshed');
+  assert.equal(tip.detail.nextblockhash, null);
+  assert.equal(tip.txs.length, 2);
+
+  // Pages are cached per (block, txstart): a repeat view makes no batch call.
+  const bt = batchCalls;
+  assert.deepEqual((await getJson('/api/explorer/block/2?txstart=1')).body.txs.map(t => t.txid), [TX_SPEND]);
+  assert.equal(batchCalls, bt, 'page cached');
+});
+
+test('slow node: DB summary returns at the deadline with rpc_pending, then the fetch lands in cache', async () => {
+  slowBlockMs = 3000; // > EXPLORER_RPC_DEADLINE_MS (1500)
+  const [g0, r0, bt0] = [getblockCalls, getrawtxCalls, batchCalls];
+  try {
+    const t0 = Date.now();
+    const { status, body } = await getJson('/api/explorer/block/3'); // node-only block, not yet cached
+    const elapsed = Date.now() - t0;
+    assert.equal(status, 200);
+    assert.ok(elapsed < 2800, `answered at the deadline (${elapsed}ms), not when the node did`);
+    assert.equal(body.rpc, false);
+    assert.equal(body.rpc_pending, true);
+    assert.equal(body.height, 3, 'shell carries what the request told us');
+    assert.equal(body.detail, null);
+    assert.equal(body.txs, null);
+
+    // The abandoned fetch keeps running and fills the cache for the re-poll.
+    await new Promise(r => setTimeout(r, 2200));
+    const g = getblockCalls;
+    const again = (await getJson('/api/explorer/block/3')).body;
+    // Across the whole sequence the node saw exactly one block fetch and one
+    // batched page: the deadline abandoned nothing and the re-poll re-fetched nothing.
+    assert.equal(getblockCalls - g0, 1, 'one getblock (verbosity 1) in total');
+    assert.equal(getrawtxCalls - r0, 1, 'the one-tx page: one getrawtransaction…');
+    assert.equal(batchCalls - bt0, 1, '…delivered in one JSON-RPC batch');
+    assert.equal(again.rpc, true);
+    assert.equal(again.rpc_pending, false);
+    assert.equal(again.hash, HASH3);
+    assert.equal(again.confirmations, null, 'beyond our synced tip');
+    assert.deepEqual(again.detail.txids, [TX_CB3]);
+    assert.equal(again.txs[0].coinbase, true);
+    assert.equal(getblockCalls, g, 'served by the background fetch, no new getblock');
+  } finally { slowBlockMs = 0; }
 });
 
 test('tx lookup succeeds WITHOUT txindex via the UTXO-table blockhash fallback', async () => {
+  const g = getblockCalls;
   const { status, body } = await getJson(`/api/explorer/tx/${TX_SPEND}`);
   assert.equal(status, 200);
-  assert.equal(body.rpc, true, 'resolved through getblock fallback');
+  assert.equal(body.rpc, true, 'resolved via getrawtransaction scoped to the blockhash');
+  assert.equal(body.rpc_pending, false);
+  assert.equal(getblockCalls, g, 'no whole-block fetch for one transaction');
+  assert.equal(body.fee_sat, 10000);
   assert.equal(body.block_height, 2);
   assert.equal(body.block_hash, HASH2);
   assert.equal(body.coinbase, false);
