@@ -585,6 +585,14 @@ export const METRICS = [
     explain: 'One panel per halving epoch, each centered on the day the bear market bottomed, so the shape of every capitulation and recovery can be compared directly. The 200-day simple moving average is the trend; the short-term holder cost basis is what the market\'s most recent buyers paid. Bottoms have formed while the average sat far above that cost basis (the shaded gap), and recoveries have been confirmed when price reclaimed both. The current epoch\'s panel is provisional: its low is the lowest close so far and moves if price sets a new one.',
     method: 'For each halving epoch, the cycle low is the trough of the deepest peak-to-trough drawdown, measured on a centered 15-day rolling median of daily closes so a single bad print cannot define a cycle; day zero is the lowest close within that neighborhood, and the peak is the highest close before it. Panels show 365 days either side with price, the 200-day SMA of closes, the STH (under 155 days) cost basis, and every day the close set a new all-time high. Epochs whose deepest drawdown is under 40% are omitted.',
   },
+  {
+    slug: 'bear-rallies', column: 'price', columns: ['price'],
+    name: 'Bear Market Rallies', category: 'valuation',
+    format: 'usd', kind: 'rallies', logDefault: true,
+    short: 'How far price has bounced inside each bear market, from every cycle peak to its low, with the biggest rally of each labeled.',
+    explain: 'Bear markets are not straight lines down: each has had at least one rally strong enough to look like a new bull. This chart shades every bear from the cycle peak to its low, colors the price path inside it, and measures each day\'s bounce from the lowest close the bear had made so far. The label on each band is how long the bear lasted and its largest such rally, so the current bounce can be judged against the ones that failed. The current epoch\'s band runs from its peak to today and stays open until the epoch closes at the next halving; its rally reads from the low to date.',
+    method: 'Bears are the peak-to-low legs found for the Bear Market Bottoms chart: the deepest drawdown of each halving epoch on a centered 15-day median of closes, with the peak the highest close before the low. Inside a bear, each day\'s rally is the close divided by the lowest close since the peak, minus one. Closes inside flagged data-quality windows (currently the Feb 2014 stretch of the historical backfill, which reflects Mt. Gox prices) are excluded from the running low and drawn as a gap. Epochs whose deepest drawdown is under 40% are omitted.',
+  },
 ];
 
 export const bySlug = Object.fromEntries(METRICS.map(m => [m.slug, m]));

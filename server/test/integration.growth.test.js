@@ -244,3 +244,45 @@ test('the bottoms catalog entry is a panel set, not a line: no cycle overlay, no
   assert.equal(r.status, 400);
   assert.match((await r.json()).error, /unsupported/);
 });
+
+// ---------------------------------------------------------------------------
+// Bear-market rallies: /api/rallies shares the detector with /api/bottoms.
+test('rallies endpoint serves the price history and each bear\'s rally off its running low', async () => {
+  // Uses the epoch-3 cycle seeded by the bottoms test above (monotonic fall
+  // from the peak, so the only rally is the recovery, which is not a bear).
+  const { status, headers, body } = await j('/api/rallies');
+  assert.equal(status, 200);
+  assert.match(headers.get('cache-control'), /max-age=/);
+  assert.equal(body.slug, 'bear-rallies');
+  assert.deepEqual(Object.keys(body).sort(), ['bears', 'excluded', 'minDrawdown', 'price', 'slug', 'smoothDays']);
+  assert.ok(body.price.length > 1000);
+  assert.deepEqual(Object.keys(body.price[0]).sort(), ['day', 'p']);
+  assert.ok(body.excluded.length >= 1 && body.excluded[0].from && body.excluded[0].to && body.excluded[0].reason);
+  const b = body.bears.find(x => x.epoch === 3);
+  assert.ok(b, 'epoch 3 bear present');
+  assert.deepEqual(Object.keys(b).sort(),
+    ['current', 'days', 'drawdown', 'end', 'epoch', 'low', 'maxRally', 'ongoing', 'peak', 'rally', 'start', 'through']);
+  assert.equal(b.ongoing, false);
+  assert.equal(b.peak.price, 20000);
+  assert.equal(b.low.day, '2018-12-26');
+  assert.equal(b.through, '2018-12-26');
+  assert.equal(b.days, 300);
+  assert.equal(b.rally.length, 301);
+  assert.equal(b.maxRally.value, 0, 'a straight fall has no rally');
+  assert.ok(b.rally.every(x => x.r === 0));
+});
+
+test('the rallies catalog entry is a panel set too: no cycle overlay, no alerts, no spark', async () => {
+  assert.equal((await fetch(base + '/api/cycles/bear-rallies')).status, 400);
+  const cat = (await j('/api/catalog')).body.metrics.find(m => m.slug === 'bear-rallies');
+  assert.equal(cat.kind, 'rallies');
+  const latest = (await j('/api/latest')).body.values['bear-rallies'];
+  assert.equal(latest.value, null);
+  assert.equal(latest.spark, undefined);
+  const r = await fetch(base + '/api/alerts', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.98' },
+    body: JSON.stringify({ email: 'b@example.com', slug: 'bear-rallies', condition: 'above', threshold: 1 }),
+  });
+  assert.equal(r.status, 400);
+  assert.match((await r.json()).error, /unsupported/);
+});

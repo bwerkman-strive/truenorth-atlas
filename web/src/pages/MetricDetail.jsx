@@ -8,7 +8,8 @@ import { smaByDay } from '../sma.js';
 import { chartToPngBlob, tilesToPngBlob, copyPng } from '../chartImage.js';
 import AlertForm from '../components/AlertForm.jsx';
 import BottomsChart from '../components/BottomsChart.jsx';
-import { TOOLTIP_PROPS } from '../chartTheme.js';
+import RalliesChart from '../components/RalliesChart.jsx';
+import { TOOLTIP_PROPS, EPOCH_COLORS, EPOCH_WIDTH } from '../chartTheme.js';
 
 const RANGES = [
   { id: '1y', label: '1Y', days: 365 },
@@ -45,12 +46,6 @@ const seriesLabel = (c) => {
 const SMA_COLORS = { 20: 'var(--aurora)', 50: 'var(--cold)', 200: '#C084FC' };
 const smaKeyOf = (w) => `sma_${w}w`;
 
-// Halving epochs are ordered, so this is a ramp rather than a categorical set:
-// the guide's neutral benchmark gray for the oldest epoch, then cool -> green
-// through the §2.4 palette, with the current cycle drawn heavier.
-const EPOCH_COLORS = { 1: '#9CA3AF', 2: '#C084FC', 3: '#60A5FA', 4: '#22D3EE', 5: '#4ADE80' };
-const EPOCH_WIDTH = { 5: 2.6 }; // current cycle drawn heavier
-
 // URPD price bands are a sequential hot -> cold ramp, which the style guide
 // does not define (it specifies categorical sets only). Built from the same
 // Tailwind 400 tier the guide draws its named shades from, so luminance stays
@@ -75,6 +70,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   const [cycles, setCycles] = useState(null);
   const [urpd, setUrpd] = useState(null);
   const [bottoms, setBottoms] = useState(null);
+  const [rallies, setRallies] = useState(null);
   const [err, setErr] = useState(null);
   const [copied, setCopied] = useState('');   // transient confirmation label
   const [shareOpen, setShareOpen] = useState(false);
@@ -90,7 +86,8 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   // Scalar metrics get the full toolbar; 'stacked', 'urpd' and 'bottoms'
   // kinds render their own chart form with a reduced toolbar.
   const isBottoms = metric.kind === 'bottoms';
-  const scalar = metric.kind !== 'stacked' && metric.kind !== 'urpd' && !isBottoms;
+  const isRallies = metric.kind === 'rallies';
+  const scalar = metric.kind !== 'stacked' && metric.kind !== 'urpd' && !isBottoms && !isRallies;
   // The overlay only exists for charts that don't already draw BTC price as
   // one of their native series (and not for the price chart itself).
   const canOverlayPrice = metric.slug !== 'price' && !(metric.columns ?? []).includes('price');
@@ -130,6 +127,11 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
     if (isBottoms) {
       setBottoms(null); setErr(null);
       api.bottoms().then(setBottoms).catch(e => setErr(e.message));
+      return;
+    }
+    if (isRallies) {
+      setRallies(null); setErr(null);
+      api.rallies().then(setRallies).catch(e => setErr(e.message));
       return;
     }
     if (view === 'cycles') {
@@ -293,15 +295,22 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
     ? cycleRows.length > 0
     : metric.kind === 'urpd' ? !!urpd
     : isBottoms ? (bottoms?.cycles?.length ?? 0) > 0
+    : isRallies ? (rallies?.bears?.length ?? 0) > 0
     : rows.length > 0);
   // Bottoms: the headline is the current epoch's low (provisional while the
   // epoch is open), the last panel served.
   const curCycle = isBottoms && bottoms?.cycles?.length ? bottoms.cycles[bottoms.cycles.length - 1] : null;
+  // Rallies: the headline is the open bear's rally off its low to date (the
+  // last bear served, when it is still ongoing).
+  const lastBear = isRallies && rallies?.bears?.length ? rallies.bears[rallies.bears.length - 1] : null;
+  const curBear = lastBear?.ongoing && lastBear.current !== null ? lastBear : null;
+  const pctSigned = (v) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%`;
   // Headline figure for the exported image, mirroring the .bigval on screen.
   const headlineValue = scalar
     ? fmt(unitOpts ? scaleVal(latestVal) : latestVal, metric.format, displayUnit)
     : metric.kind === 'urpd' && urpd?.avg != null ? fmt(urpd.avg, 'usd')
-    : curCycle ? fmt(curCycle.bottom.price, 'usd') : '';
+    : curCycle ? fmt(curCycle.bottom.price, 'usd')
+    : curBear ? pctSigned(curBear.current) : '';
   // Band order comes from the catalog: the API's JSONB rows arrive with keys
   // re-sorted by Postgres (length, then bytes), so deriving order from the
   // data would scramble the stack and the tooltip.
@@ -348,6 +357,14 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             </span>
           </div>
         )}
+        {curBear && (
+          <div className="bigval">
+            {pctSigned(curBear.current)}
+            <span className="bigval-sub">
+              epoch {curBear.epoch} rally off the {fmtDay(curBear.low.day)} low, day {curBear.days} of the bear
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="toolbar">
@@ -357,12 +374,12 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             <button className={view === 'cycles' ? 'on' : ''} onClick={() => setView('cycles')}>Cycles</button>
           </div>
         )}
-        {view === 'series' && metric.kind !== 'urpd' && !isBottoms && <div className="grp" role="group" aria-label="Time range">
+        {view === 'series' && metric.kind !== 'urpd' && !isBottoms && !isRallies && <div className="grp" role="group" aria-label="Time range">
           {RANGES.map(r => (
             <button key={r.id} className={range === r.id ? 'on' : ''} onClick={() => setRange(r.id)}>{r.label}</button>
           ))}
         </div>}
-        {(scalar || isBottoms) && (
+        {(scalar || isBottoms || isRallies) && (
           <div className="grp" role="group" aria-label="Scale">
             <button className={!logScale ? 'on' : ''} onClick={() => setLogScale(false)}>Linear</button>
             <button className={logScale ? 'on' : ''} onClick={() => setLogScale(true)}>Log</button>
@@ -499,7 +516,14 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             </div>
           </>
         )}
-        {view === 'series' && metric.kind !== 'urpd' && !err && !data && <div className="loading">Loading series…</div>}
+        {isRallies && !err && !rallies && <div className="loading">Measuring bear-market rallies…</div>}
+        {isRallies && !err && rallies && rallies.bears.length === 0 && (
+          <div className="loading">No completed bear market in the finalized history yet.</div>
+        )}
+        {isRallies && !err && rallies && rallies.bears.length > 0 && (
+          <RalliesChart data={rallies} logScale={logScale} />
+        )}
+        {view === 'series' && metric.kind !== 'urpd' && !isRallies && !err && !data && <div className="loading">Loading series…</div>}
         {view === 'series' && !err && data && rows.length === 0 && (
           <div className="loading">No finalized data for this range yet. The sync worker is still building history.</div>
         )}

@@ -1,10 +1,7 @@
-// Bear-market bottom comparison.
-//
-// One panel per halving epoch, each re-based to "days since the cycle low" so
-// the bottoms can be read side by side: BTC price, its 200-day simple moving
-// average, the short-term-holder cost basis, and every day the close set a
-// new all-time high. Pure functions over the daily rows; the /api/bottoms
-// route in api.js supplies the rows and the HALVINGS table.
+// Bear-market cycle analysis: the cycle lows (Bear Market Bottoms) and the
+// rallies inside each bear (Bear Market Rallies). Pure functions over the
+// daily rows; the /api/bottoms and /api/rallies routes in api.js supply the
+// rows and the HALVINGS table.
 //
 // Definitions (all data-driven, nothing hand-picked):
 //   * The cycle low of an epoch is the trough of the epoch's deepest
@@ -18,9 +15,16 @@
 //     had a bear market yet and are omitted.
 //   * The current (open) epoch's low is provisional: a new lower close moves
 //     it. It stays flagged until the epoch closes at the next halving.
+//   * A bear market runs from the peak to the low (to the latest day while
+//     the epoch is open). Inside it, the rally on a day is the close relative
+//     to the lowest close the bear had made so far. Closes inside a flagged
+//     data-quality window (priceQuality.js) are excluded from that running
+//     low and left as gaps.
+
+import { BAD_CLOSE_WINDOWS, isFlaggedClose } from './priceQuality.js';
 
 export const DEFAULTS = {
-  window: 365,       // days shown either side of the low
+  window: 365,       // days shown either side of the low (bottoms)
   minDrawdown: 0.4,  // epochs with a shallower deepest drawdown are omitted
   smoothHalf: 7,     // centered median half-width -> 15-day window
   smaDays: 200,
@@ -67,28 +71,21 @@ export function sma(vals, n) {
 }
 
 const dayDiff = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 86400e3);
+const round = (v, places) => Number(v.toFixed(places));
 
-// rows: [{ day: 'YYYY-MM-DD', price, sth_cost_basis }] ascending by day, one
-// row per day. halvings: [{ epoch, start }] ascending.
-export function buildBottoms(rows, halvings, opts = {}) {
+// Shared detector. rows: [{ day: 'YYYY-MM-DD', price, ... }] ascending by day,
+// one row per day. halvings: [{ epoch, start }] ascending. Returns the
+// coerced price array plus one entry per epoch that has had a bear market,
+// with row INDICES for peak and bottom.
+export function findCycles(rows, halvings, opts = {}) {
   const o = { ...DEFAULTS, ...opts };
   const price = rows.map(r => num(r.price));
-  const sth = rows.map(r => num(r.sth_cost_basis));
   const smooth = rollingMedian(price, o.smoothHalf);
-  const avg = sma(price, o.smaDays);
-
-  // All-time-high flags on the raw close.
-  const ath = new Array(rows.length).fill(false);
-  let max = -Infinity;
-  for (let i = 0; i < rows.length; i++) {
-    if (price[i] !== null && price[i] > max) { max = price[i]; ath[i] = true; }
-  }
-
   const cycles = [];
   for (let e = 0; e < halvings.length; e++) {
     const start = halvings[e].start;
     const end = halvings[e + 1]?.start ?? null;
-    let lo = rows.findIndex(r => r.day >= start);
+    const lo = rows.findIndex(r => r.day >= start);
     if (lo < 0) continue;
     let hi = end === null ? rows.length : rows.findIndex(r => r.day >= end);
     if (hi < 0) hi = rows.length;
@@ -116,26 +113,46 @@ export function buildBottoms(rows, halvings, opts = {}) {
     }
     if (bottom < 0 || peak < 0) continue;
 
+    cycles.push({
+      epoch: halvings[e].epoch, start, end, provisional: end === null,
+      peak, bottom, drawdown: 1 - price[bottom] / price[peak],
+    });
+  }
+  return { price, cycles, opts: o };
+}
+
+// Bear Market Bottoms: one panel per epoch, re-based to days since the low,
+// with price, 200-day SMA, STH cost basis and all-time-high days.
+export function buildBottoms(rows, halvings, opts = {}) {
+  const { price, cycles, opts: o } = findCycles(rows, halvings, opts);
+  const sth = rows.map(r => num(r.sth_cost_basis));
+  const avg = sma(price, o.smaDays);
+
+  // All-time-high flags on the raw close.
+  const ath = new Array(rows.length).fill(false);
+  let max = -Infinity;
+  for (let i = 0; i < rows.length; i++) {
+    if (price[i] !== null && price[i] > max) { max = price[i]; ath[i] = true; }
+  }
+
+  const out = cycles.map(c => {
     // Offsets come from the calendar, not the row index, so a gap in the
     // table cannot shift a panel.
     const values = [];
     for (let i = 0; i < rows.length; i++) {
-      const d = dayDiff(rows[i].day, rows[bottom].day);
+      const d = dayDiff(rows[i].day, rows[c.bottom].day);
       if (d < -o.window) continue;
       if (d > o.window) break;
       values.push({ d, day: rows[i].day, price: price[i], sma: avg[i], sth: sth[i], ath: ath[i] });
     }
-
-    cycles.push({
-      epoch: halvings[e].epoch,
-      start, end,
-      provisional: end === null,
-      peak: { day: rows[peak].day, price: price[peak] },
-      bottom: { day: rows[bottom].day, price: price[bottom] },
-      drawdown: 1 - price[bottom] / price[peak],
+    return {
+      epoch: c.epoch, start: c.start, end: c.end, provisional: c.provisional,
+      peak: { day: rows[c.peak].day, price: price[c.peak] },
+      bottom: { day: rows[c.bottom].day, price: price[c.bottom] },
+      drawdown: c.drawdown,
       values,
-    });
-  }
+    };
+  });
 
   return {
     slug: 'bottom-comparison',
@@ -143,6 +160,53 @@ export function buildBottoms(rows, halvings, opts = {}) {
     minDrawdown: o.minDrawdown,
     smoothDays: o.smoothHalf * 2 + 1,
     smaDays: o.smaDays,
-    cycles,
+    cycles: out,
+  };
+}
+
+// Bear Market Rallies: the full daily price history plus, per bear market
+// (peak -> low, or -> latest day while the epoch is open), each day's rally
+// off the running low and the largest one.
+export function buildRallies(rows, halvings, opts = {}) {
+  const excluded = opts.excluded ?? BAD_CLOSE_WINDOWS;
+  const { price, cycles, opts: o } = findCycles(rows, halvings, opts);
+
+  const bears = cycles.map(c => {
+    const end = c.provisional ? rows.length - 1 : c.bottom;
+    let runmin = Infinity;
+    let maxRally = { value: 0, day: rows[c.peak].day };
+    const rally = [];
+    for (let i = c.peak; i <= end; i++) {
+      const p = price[i];
+      if (p === null) continue;
+      if (isFlaggedClose(rows[i].day, excluded)) { rally.push({ day: rows[i].day, r: null }); continue; }
+      runmin = Math.min(runmin, p);
+      const r = round(p / runmin - 1, 5);
+      rally.push({ day: rows[i].day, r });
+      if (r > maxRally.value) maxRally = { value: r, day: rows[i].day };
+    }
+    const last = rally.length ? rally[rally.length - 1] : null;
+    return {
+      epoch: c.epoch, start: c.start, end: c.end, ongoing: c.provisional,
+      peak: { day: rows[c.peak].day, price: price[c.peak] },
+      low: { day: rows[c.bottom].day, price: price[c.bottom] },
+      through: rows[end].day,
+      days: dayDiff(rows[end].day, rows[c.peak].day),
+      drawdown: c.drawdown,
+      maxRally,
+      current: c.provisional && last ? last.r : null,
+      rally,
+    };
+  });
+
+  return {
+    slug: 'bear-rallies',
+    minDrawdown: o.minDrawdown,
+    smoothDays: o.smoothHalf * 2 + 1,
+    excluded,
+    // Closes to the cent (six places under a dollar): the payload is the
+    // whole history, and float noise past that is weight, not information.
+    price: rows.map((r, i) => ({ day: r.day, p: price[i] === null ? null : round(price[i], price[i] >= 1 ? 2 : 6) })),
+    bears,
   };
 }

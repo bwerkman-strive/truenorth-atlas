@@ -49,8 +49,11 @@ server/src/
   prices.js        daily closes (Massive canonical 2015->, CryptoCompare 2010–2015 backfill,
                    pre-market zero-fill) + getSpot() live price (Massive last-trade, cached)
   catalog.js       SINGLE SOURCE OF TRUTH for metrics (slug/column/zones/copy)
-  bottoms.js       pure math for the bear-market bottom panels (/api/bottoms): per-epoch cycle low
-                   on a 15-day median, 200d SMA, STH cost basis, ATH days; kind 'bottoms' in the catalog
+  bottoms.js       pure bear-cycle math: findCycles (per-epoch peak/low on a 15-day median) feeding
+                   /api/bottoms (kind 'bottoms': 200d SMA, STH cost basis, ATH days) and /api/rallies
+                   (kind 'rallies': each bear's rally off its running low)
+  priceQuality.js  register of known-bad close windows (Feb 2014 Mt. Gox stretch); consulted by
+                   rally math and named in method copy; never used to alter stored prices
   metricCopy.js    admin-editable overrides for catalog explain/method prose (merged by /api/catalog)
   api.js           read API, /api/status, /api/series, /api/cycles, /api/spot, mounts
   explorer.js      block/tx/address lookups (DB-first, RPC-enriched), search, rate limiter
@@ -65,11 +68,13 @@ server/worker-entrypoint.sh  waits for Tor bootstrap (skipped if TOR_SOCKS_PROXY
                              args — default node src/sync.js; atlas-api passes node src/api.js
 web/src/
   api.js           API client; format.js pure formatters; epoch.js pure halving math;
-                   sma.js + bottomsRows.js pure chart-row helpers; chartTheme.js shared recharts chrome
+                   sma.js + bottomsRows.js + ralliesRows.js pure chart-row helpers; chartTheme.js shared
+                   recharts chrome + EPOCH_COLORS
   App.jsx          hash router (#/, #/m/:slug, #/explorer, #/b|tx|a/:x, #/admin), header, footer
   theme.css        entire design system incl. responsive layer — no CSS frameworks
   components/      EpochRings (the living logo), BearingDial, AlertForm, SubscribeForm, NewsletterTab,
-                   BottomsChart (small-multiple cycle-low panels for the 'bottoms' catalog kind)
+                   BottomsChart (small-multiple cycle-low panels for the 'bottoms' catalog kind),
+                   RalliesChart (price pane over rally pane for the 'rallies' kind)
   pages/           Overview, MetricDetail (timeline/cycles views), Explorer, Admin
 ```
 
