@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { api, fmt, compact, fmtDay, axisTick } from '../api.js';
 import { smaByDay } from '../sma.js';
-import { chartToPngBlob } from '../chartImage.js';
+import { chartToPngBlob, tilesToPngBlob, copyPng } from '../chartImage.js';
 import AlertForm from '../components/AlertForm.jsx';
 import BottomsChart from '../components/BottomsChart.jsx';
 import { TOOLTIP_PROPS } from '../chartTheme.js';
@@ -187,29 +187,14 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
 
   const copyChart = async () => {
     setShareOpen(false);
-    // Safari only accepts a Promise here and requires the write to be issued in
-    // the same task as the click, so rasterization is passed unresolved rather
-    // than awaited first.
-    const png = chartToPngBlob(chartBoxRef.current, {
-      title: metric.name,
-      value: headlineValue,
-    });
-    try {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
-      flash('Chart copied');
-    } catch {
-      // Firefox has no image clipboard support; any rasterize failure lands
-      // here too. Hand over a download so the copy is never a dead end.
-      try {
-        const url = URL.createObjectURL(await png);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${metric.slug}-true-north-atlas.png`;
-        a.click();
-        URL.revokeObjectURL(url);
-        flash('Chart downloaded');
-      } catch { flash('Copy failed'); }
-    }
+    // Rasterization is passed unresolved (Safari needs the clipboard write in
+    // the click's own task, see copyPng). Bottoms copy the whole tile grid.
+    const meta = { title: metric.name, value: headlineValue };
+    const png = isBottoms
+      ? tilesToPngBlob(chartBoxRef.current, meta)
+      : chartToPngBlob(chartBoxRef.current, meta);
+    const status = await copyPng(png, `${metric.slug}-true-north-atlas.png`);
+    flash(status === 'copied' ? 'Chart copied' : status === 'downloaded' ? 'Chart downloaded' : 'Copy failed');
   };
 
   const shareToX = () => {
@@ -434,7 +419,19 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
         </div>
       </div>
 
-      <div className="chartbox" ref={chartBoxRef}>
+      {isBottoms && (
+        <div className="bc-group" ref={chartBoxRef}>
+          {err && <div className="err">Could not load series: {err}</div>}
+          {!err && !bottoms && <div className="loading">Aligning cycle lows…</div>}
+          {!err && bottoms && bottoms.cycles.length === 0 && (
+            <div className="loading">No completed bear market in the finalized history yet.</div>
+          )}
+          {!err && bottoms && bottoms.cycles.length > 0 && (
+            <BottomsChart data={bottoms} logScale={logScale} metricName={metric.name} />
+          )}
+        </div>
+      )}
+      {!isBottoms && <div className="chartbox" ref={chartBoxRef}>
         {hasChart && (
           <div className="chart-watermark" aria-hidden="true">
             TRUE NORTH <em>ATLAS</em>
@@ -502,14 +499,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             </div>
           </>
         )}
-        {isBottoms && !err && !bottoms && <div className="loading">Aligning cycle lows…</div>}
-        {isBottoms && !err && bottoms && bottoms.cycles.length === 0 && (
-          <div className="loading">No completed bear market in the finalized history yet.</div>
-        )}
-        {isBottoms && !err && bottoms && bottoms.cycles.length > 0 && (
-          <BottomsChart data={bottoms} logScale={logScale} />
-        )}
-        {view === 'series' && metric.kind !== 'urpd' && !isBottoms && !err && !data && <div className="loading">Loading series…</div>}
+        {view === 'series' && metric.kind !== 'urpd' && !err && !data && <div className="loading">Loading series…</div>}
         {view === 'series' && !err && data && rows.length === 0 && (
           <div className="loading">No finalized data for this range yet. The sync worker is still building history.</div>
         )}
@@ -599,7 +589,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             ))}
           </div>
         )}
-      </div>
+      </div>}
 
       <div className="panes">
         <div className="pane">
