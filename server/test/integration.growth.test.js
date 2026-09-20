@@ -191,3 +191,56 @@ test('cycles endpoint guards its inputs', async () => {
   assert.equal((await fetch(base + '/api/cycles/not-a-metric')).status, 404);
   assert.equal((await fetch(base + '/api/cycles/hodl-waves')).status, 400);
 });
+
+// ---------------------------------------------------------------------------
+// Bear-market bottom comparison: /api/bottoms re-bases each epoch's cycle low.
+test('bottoms endpoint finds the epoch low and serves aligned panels', async () => {
+  // A stylised epoch-3 cycle: 600 -> 20,000 over 600 days, down to 3,000 by
+  // day 900, recovering after. STH cost basis rides at 90% of price.
+  await pool.query(`
+    INSERT INTO metrics_daily (day, price, sth_cost_basis)
+    SELECT ('2016-07-09'::date + i),
+           p, p * 0.9
+    FROM generate_series(0, 1299) i,
+    LATERAL (SELECT CASE WHEN i <= 600 THEN 600 + 19400.0 * i / 600
+                         WHEN i <= 900 THEN 20000 - 17000.0 * (i - 600) / 300
+                         ELSE 3000 + 7000.0 * (i - 900) / 400 END AS p) x
+    ON CONFLICT (day) DO NOTHING`);
+  const { status, headers, body } = await j('/api/bottoms');
+  assert.equal(status, 200);
+  assert.match(headers.get('cache-control'), /max-age=/);
+  assert.equal(body.slug, 'bottom-comparison');
+  assert.deepEqual(Object.keys(body).sort(), ['cycles', 'minDrawdown', 'slug', 'smaDays', 'smoothDays', 'window']);
+  const c = body.cycles.find(x => x.epoch === 3);
+  assert.ok(c, 'epoch 3 cycle present');
+  assert.deepEqual(Object.keys(c).sort(), ['bottom', 'drawdown', 'end', 'epoch', 'peak', 'provisional', 'start', 'values']);
+  assert.equal(c.provisional, false);
+  assert.equal(c.bottom.day, '2018-12-26'); // 2016-07-09 + 900 days
+  assert.equal(c.bottom.price, 3000);
+  assert.equal(c.peak.price, 20000);
+  assert.ok(Math.abs(c.drawdown - 0.85) < 1e-9);
+  assert.equal(c.values.length, 731);
+  assert.deepEqual(Object.keys(c.values[0]).sort(), ['ath', 'd', 'day', 'price', 'sma', 'sth']);
+  assert.equal(c.values[0].d, -365);
+  assert.equal(c.values.find(v => v.d === 0).price, 3000);
+  // The seeded epochs 4/5 only rise, so neither has a bear market to show.
+  assert.ok(!body.cycles.some(x => x.epoch === 4 || x.epoch === 5));
+});
+
+test('the bottoms catalog entry is a panel set, not a line: no cycle overlay, no alerts', async () => {
+  assert.equal((await fetch(base + '/api/cycles/bottom-comparison')).status, 400);
+  const series = await j('/api/series/bottom-comparison?from=2018-12-01&to=2018-12-31');
+  assert.equal(series.status, 200);
+  assert.deepEqual(series.body.columns, ['price', 'sth_cost_basis']);
+  const cat = (await j('/api/catalog')).body.metrics.find(m => m.slug === 'bottom-comparison');
+  assert.equal(cat.kind, 'bottoms');
+  const latest = (await j('/api/latest')).body.values['bottom-comparison'];
+  assert.equal(latest.value, null);
+  assert.equal(latest.spark, undefined);
+  const r = await fetch(base + '/api/alerts', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.99' },
+    body: JSON.stringify({ email: 'b@example.com', slug: 'bottom-comparison', condition: 'above', threshold: 1 }),
+  });
+  assert.equal(r.status, 400);
+  assert.match((await r.json()).error, /unsupported/);
+});

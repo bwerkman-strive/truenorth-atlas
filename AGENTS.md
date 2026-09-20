@@ -49,6 +49,8 @@ server/src/
   prices.js        daily closes (Massive canonical 2015->, CryptoCompare 2010–2015 backfill,
                    pre-market zero-fill) + getSpot() live price (Massive last-trade, cached)
   catalog.js       SINGLE SOURCE OF TRUTH for metrics (slug/column/zones/copy)
+  bottoms.js       pure math for the bear-market bottom panels (/api/bottoms): per-epoch cycle low
+                   on a 15-day median, 200d SMA, STH cost basis, ATH days; kind 'bottoms' in the catalog
   metricCopy.js    admin-editable overrides for catalog explain/method prose (merged by /api/catalog)
   api.js           read API, /api/status, /api/series, /api/cycles, /api/spot, mounts
   explorer.js      block/tx/address lookups (DB-first, RPC-enriched), search, rate limiter
@@ -62,10 +64,12 @@ server/Dockerfile.worker     Render Docker image shared by atlas-sync AND atlas-
 server/worker-entrypoint.sh  waits for Tor bootstrap (skipped if TOR_SOCKS_PROXY unset), then execs its
                              args — default node src/sync.js; atlas-api passes node src/api.js
 web/src/
-  api.js           API client; format.js pure formatters; epoch.js pure halving math
+  api.js           API client; format.js pure formatters; epoch.js pure halving math;
+                   sma.js + bottomsRows.js pure chart-row helpers; chartTheme.js shared recharts chrome
   App.jsx          hash router (#/, #/m/:slug, #/explorer, #/b|tx|a/:x, #/admin), header, footer
   theme.css        entire design system incl. responsive layer — no CSS frameworks
-  components/      EpochRings (the living logo), BearingDial, AlertForm, SubscribeForm, NewsletterTab
+  components/      EpochRings (the living logo), BearingDial, AlertForm, SubscribeForm, NewsletterTab,
+                   BottomsChart (small-multiple cycle-low panels for the 'bottoms' catalog kind)
   pages/           Overview, MetricDetail (timeline/cycles views), Explorer, Admin
 ```
 

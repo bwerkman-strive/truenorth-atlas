@@ -19,7 +19,7 @@ export default function NewsletterTab({ token, catalog }) {
   const [testEmail, setTestEmail] = useState('');
   const [sendAt, setSendAt] = useState('');
 
-  const lineMetrics = (catalog?.metrics ?? []).filter(m => m.kind !== 'stacked');
+  const lineMetrics = (catalog?.metrics ?? []).filter(m => m.kind !== 'stacked' && m.kind !== 'bottoms');
 
   const refresh = async () => {
     try {

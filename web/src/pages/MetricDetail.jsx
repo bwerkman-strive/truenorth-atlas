@@ -7,6 +7,8 @@ import { api, fmt, compact, fmtDay, axisTick } from '../api.js';
 import { smaByDay } from '../sma.js';
 import { chartToPngBlob } from '../chartImage.js';
 import AlertForm from '../components/AlertForm.jsx';
+import BottomsChart from '../components/BottomsChart.jsx';
+import { TOOLTIP_PROPS } from '../chartTheme.js';
 
 const RANGES = [
   { id: '1y', label: '1Y', days: 365 },
@@ -58,16 +60,6 @@ const WAVE_COLORS = [
   '#4ADE80', '#34D399', '#22D3EE', '#38BDF8', '#60A5FA', '#C084FC',
 ];
 
-// Shared tooltip chrome. Item text color comes from each series' own stroke/
-// fill; charts whose series carry no usable color (the URPD bars, colored per
-// Cell) must set an explicit itemStyle or recharts falls back to black.
-// Tooltip chrome follows the guide's §6.4 convention (solstice fill, equinox
-// border, light-sky label text).
-const TOOLTIP_PROPS = {
-  contentStyle: { background: '#323140', border: '1px solid #514F60', borderRadius: 8, fontSize: 12 },
-  labelStyle: { color: '#C4CEDA' },
-};
-
 function toneColor(t) {
   return t === 'hot' ? 'rgba(248,113,113,0.10)' : t === 'warm' ? 'rgba(251,191,36,0.10)'
     : t === 'cold' ? 'rgba(96,165,250,0.10)' : 'transparent';
@@ -82,6 +74,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   const [data, setData] = useState(null);
   const [cycles, setCycles] = useState(null);
   const [urpd, setUrpd] = useState(null);
+  const [bottoms, setBottoms] = useState(null);
   const [err, setErr] = useState(null);
   const [copied, setCopied] = useState('');   // transient confirmation label
   const [shareOpen, setShareOpen] = useState(false);
@@ -94,9 +87,10 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
     ? metric.sma : null;
   const [smaOn, setSmaOn] = useState(() => new Set(smaOpts?.active ?? []));
   const [smaSrc, setSmaSrc] = useState(null);
-  // Scalar metrics get the full toolbar; 'stacked' and 'urpd' kinds render
-  // their own chart form with a reduced toolbar.
-  const scalar = metric.kind !== 'stacked' && metric.kind !== 'urpd';
+  // Scalar metrics get the full toolbar; 'stacked', 'urpd' and 'bottoms'
+  // kinds render their own chart form with a reduced toolbar.
+  const isBottoms = metric.kind === 'bottoms';
+  const scalar = metric.kind !== 'stacked' && metric.kind !== 'urpd' && !isBottoms;
   // The overlay only exists for charts that don't already draw BTC price as
   // one of their native series (and not for the price chart itself).
   const canOverlayPrice = metric.slug !== 'price' && !(metric.columns ?? []).includes('price');
@@ -131,6 +125,11 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
     if (metric.kind === 'urpd') {
       setUrpd(null); setErr(null);
       api.urpd().then(setUrpd).catch(e => setErr(e.message));
+      return;
+    }
+    if (isBottoms) {
+      setBottoms(null); setErr(null);
+      api.bottoms().then(setBottoms).catch(e => setErr(e.message));
       return;
     }
     if (view === 'cycles') {
@@ -307,11 +306,17 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   // Watermark only when a chart is actually on screen, never over loading/empty states.
   const hasChart = !err && (view === 'cycles'
     ? cycleRows.length > 0
-    : metric.kind === 'urpd' ? !!urpd : rows.length > 0);
+    : metric.kind === 'urpd' ? !!urpd
+    : isBottoms ? (bottoms?.cycles?.length ?? 0) > 0
+    : rows.length > 0);
+  // Bottoms: the headline is the current epoch's low (provisional while the
+  // epoch is open), the last panel served.
+  const curCycle = isBottoms && bottoms?.cycles?.length ? bottoms.cycles[bottoms.cycles.length - 1] : null;
   // Headline figure for the exported image, mirroring the .bigval on screen.
   const headlineValue = scalar
     ? fmt(unitOpts ? scaleVal(latestVal) : latestVal, metric.format, displayUnit)
-    : (metric.kind === 'urpd' && urpd?.avg != null ? fmt(urpd.avg, 'usd') : '');
+    : metric.kind === 'urpd' && urpd?.avg != null ? fmt(urpd.avg, 'usd')
+    : curCycle ? fmt(curCycle.bottom.price, 'usd') : '';
   // Band order comes from the catalog: the API's JSONB rows arrive with keys
   // re-sorted by Postgres (length, then bytes), so deriving order from the
   // data would scramble the stack and the tooltip.
@@ -349,6 +354,15 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             {fmt(urpd.avg, 'usd')}<span className="bigval-sub">average cost basis</span>
           </div>
         )}
+        {curCycle && (
+          <div className="bigval">
+            {fmt(curCycle.bottom.price, 'usd')}
+            <span className="bigval-sub">
+              epoch {curCycle.epoch} {curCycle.provisional ? 'low to date' : 'low'}, {fmtDay(curCycle.bottom.day)}
+              {curCycle.provisional ? ' (provisional)' : ''}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="toolbar">
@@ -358,13 +372,13 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             <button className={view === 'cycles' ? 'on' : ''} onClick={() => setView('cycles')}>Cycles</button>
           </div>
         )}
-        {view === 'series' && metric.kind !== 'urpd' && <div className="grp" role="group" aria-label="Time range">
+        {view === 'series' && metric.kind !== 'urpd' && !isBottoms && <div className="grp" role="group" aria-label="Time range">
           {RANGES.map(r => (
             <button key={r.id} className={range === r.id ? 'on' : ''} onClick={() => setRange(r.id)}>{r.label}</button>
           ))}
         </div>}
-        {scalar && (
-          <div className="grp">
+        {(scalar || isBottoms) && (
+          <div className="grp" role="group" aria-label="Scale">
             <button className={!logScale ? 'on' : ''} onClick={() => setLogScale(false)}>Linear</button>
             <button className={logScale ? 'on' : ''} onClick={() => setLogScale(true)}>Log</button>
           </div>
@@ -488,7 +502,14 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             </div>
           </>
         )}
-        {view === 'series' && metric.kind !== 'urpd' && !err && !data && <div className="loading">Loading series…</div>}
+        {isBottoms && !err && !bottoms && <div className="loading">Aligning cycle lows…</div>}
+        {isBottoms && !err && bottoms && bottoms.cycles.length === 0 && (
+          <div className="loading">No completed bear market in the finalized history yet.</div>
+        )}
+        {isBottoms && !err && bottoms && bottoms.cycles.length > 0 && (
+          <BottomsChart data={bottoms} logScale={logScale} />
+        )}
+        {view === 'series' && metric.kind !== 'urpd' && !isBottoms && !err && !data && <div className="loading">Loading series…</div>}
         {view === 'series' && !err && data && rows.length === 0 && (
           <div className="loading">No finalized data for this range yet. The sync worker is still building history.</div>
         )}
