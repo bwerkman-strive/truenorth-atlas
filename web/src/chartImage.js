@@ -205,11 +205,11 @@ export async function chartToPngBlob(container, { title = '', value = '', scale 
   ctx.drawImage(img, PAD, y, cw, ch);
 
   // Watermark: centred on the plot itself, matching the on-screen treatment
-  // (.chart-watermark: 600 weight, 15px, 0.1em tracking).
+  // (.chart-watermark at laptop width and up: 600 weight, 20px, 0.1em tracking).
   ctx.save();
   ctx.globalAlpha = 0.3;
-  ctx.font = `600 15px ${UI}`;
-  if ('letterSpacing' in ctx) ctx.letterSpacing = '1.5px';
+  ctx.font = `600 20px ${UI}`;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '2px';
   ctx.textBaseline = 'middle';
   const lockup = 'TRUE NORTH ';
   const wl = ctx.measureText(lockup).width;
