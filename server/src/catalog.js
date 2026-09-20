@@ -577,6 +577,14 @@ export const METRICS = [
     explain: 'The market price plotted against three prices derived from the chain itself. Realized price is the aggregate cost basis of all coins, historically the bear-market floor. Balanced price subtracts transferred value from realized value, marking deep-capitulation lows. STH cost basis is the average acquisition price of coins younger than 155 days; in uptrends it acts as dynamic support, and losing it has marked regime shifts. Where spot trades relative to these bands is the fastest single read on cycle position.',
     method: 'Spot close vs realized cap ÷ supply, realized − transferred price, and STH-cohort cost basis, daily.',
   },
+  {
+    slug: 'bottom-comparison', column: 'price', columns: ['price', 'sth_cost_basis'],
+    name: 'Bear Market Bottoms', category: 'valuation',
+    format: 'usd', kind: 'bottoms', logDefault: true,
+    short: 'Every cycle low side by side: price, the 200-day average, and short-term holder cost basis, aligned on day zero.',
+    explain: 'One panel per halving epoch, each centered on the day the bear market bottomed, so the shape of every capitulation and recovery can be compared directly. The 200-day simple moving average is the trend; the short-term holder cost basis is what the market\'s most recent buyers paid. Bottoms have formed while the average sat far above that cost basis (the shaded gap), and recoveries have been confirmed when price reclaimed both. The current epoch\'s panel is provisional: its low is the lowest close so far and moves if price sets a new one.',
+    method: 'For each halving epoch, the cycle low is the trough of the deepest peak-to-trough drawdown, measured on a centered 15-day rolling median of daily closes so a single bad print cannot define a cycle; day zero is the lowest close within that neighborhood, and the peak is the highest close before it. Panels show 365 days either side with price, the 200-day SMA of closes, the STH (under 155 days) cost basis, and every day the close set a new all-time high. Epochs whose deepest drawdown is under 40% are omitted.',
+  },
 ];
 
 export const bySlug = Object.fromEntries(METRICS.map(m => [m.slug, m]));
