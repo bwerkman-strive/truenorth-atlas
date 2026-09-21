@@ -10,11 +10,3 @@ export const TOOLTIP_PROPS = {
 };
 
 export const AXIS_TICK = { fill: 'var(--text-faint)', fontSize: 11 };
-
-// Halving epochs are ordered, so this is a ramp rather than a categorical set:
-// the guide's neutral benchmark gray for the oldest epoch, then cool -> green
-// through the §2.4 palette, with the current cycle drawn heavier. Every chart
-// that colors by epoch (cycle overlays, bear rallies) reads from here so an
-// epoch keeps one color across the app.
-export const EPOCH_COLORS = { 1: '#9CA3AF', 2: '#C084FC', 3: '#60A5FA', 4: '#22D3EE', 5: '#4ADE80' };
-export const EPOCH_WIDTH = { 5: 2.6 }; // current cycle drawn heavier

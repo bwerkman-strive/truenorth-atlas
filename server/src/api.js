@@ -20,7 +20,7 @@ import { alertsRouter, startAlertChecker } from './alerts.js';
 import { subscribeRouter, newslettersAdminRouter, emailLogRouter, processNewsletters } from './newsletters.js';
 import { getCopyOverrides, metricCopyAdminRouter } from './metricCopy.js';
 import { getSpot } from './prices.js';
-import { buildBottoms } from './bottoms.js';
+import { buildBottoms, buildRallies } from './bottoms.js';
 
 const log = pino({ level: process.env.LOG_LEVEL || 'info' });
 const app = express();
@@ -67,7 +67,7 @@ const HALVINGS = [
 app.get('/api/cycles/:slug', async (req, res) => {
   const m = bySlug[req.params.slug];
   if (!m) return res.status(404).json({ error: 'unknown metric' });
-  if (m.kind === 'stacked' || m.kind === 'urpd' || m.kind === 'bottoms') return res.status(400).json({ error: 'cycle overlays are for line metrics' });
+  if (m.kind === 'stacked' || m.kind === 'urpd' || m.kind === 'bottoms' || m.kind === 'rallies') return res.status(400).json({ error: 'cycle overlays are for line metrics' });
   const col = (Array.isArray(m.column) ? m.column[0] : m.column);
   if (!IDENT_RE.test(col)) return res.status(400).json({ error: 'bad metric' });
   try {
@@ -137,6 +137,20 @@ app.get('/api/bottoms', async (_req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ---- Bear-market rallies -----------------------------------------------------
+// GET /api/rallies -> the full daily close history plus, per bear market (cycle
+// peak -> low, or -> latest day while the epoch is open), each day's rally off
+// the bear's running low. Same cycle detector as /api/bottoms.
+app.get('/api/rallies', async (_req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT day::text AS day, price::float AS price FROM metrics_daily
+       WHERE price IS NOT NULL ORDER BY day ASC`);
+    cache(res);
+    res.json(buildRallies(r.rows, HALVINGS));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ---- Block explorer -------------------------------------------------------
 // Free public surface (rate-limited per IP) — powers the website.
 app.use('/api/explorer', publicRateLimit, explorerRouter());
@@ -203,7 +217,7 @@ app.get('/api/latest', async (_req, res) => {
     const spark = await pool.query(
       `SELECT * FROM metrics_daily ORDER BY day DESC LIMIT 30`);
     // Full-history percentile of the latest value per metric, one scan.
-    const nonScalar = (m) => m.kind === 'stacked' || m.kind === 'urpd' || m.kind === 'bottoms';
+    const nonScalar = (m) => m.kind === 'stacked' || m.kind === 'urpd' || m.kind === 'bottoms' || m.kind === 'rallies';
     const numericCols = [...new Set(METRICS.filter(m => !nonScalar(m)).map(m => m.column))]
       .filter(c => IDENT_RE.test(c));
     const pctSql = numericCols.map(c =>
@@ -216,9 +230,9 @@ app.get('/api/latest', async (_req, res) => {
     const values = {};
     for (const m of METRICS) {
       values[m.slug] = {
-        // The urpd blob is fetched on demand via /api/urpd and the bottoms
-        // panels via /api/bottoms; keep /api/latest light.
-        value: m.kind === 'urpd' || m.kind === 'bottoms' ? null
+        // The urpd blob is fetched on demand via /api/urpd, the bottoms panels
+        // via /api/bottoms and the rallies via /api/rallies; keep /api/latest light.
+        value: m.kind === 'urpd' || m.kind === 'bottoms' || m.kind === 'rallies' ? null
           : row[m.column] !== null ? Number(row[m.column]) || row[m.column] : null,
         percentile: nonScalar(m) ? undefined
           : (pct[m.column] === null || pct[m.column] === undefined ? null : Number(pct[m.column])),

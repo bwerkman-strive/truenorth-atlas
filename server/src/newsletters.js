@@ -107,7 +107,7 @@ function validateCharts(charts) {
   if (charts.length > 8) return 'at most 8 charts per newsletter';
   for (const s of charts) {
     const m = bySlug[s];
-    if (!m || m.kind === 'stacked' || m.kind === 'bottoms') return `unknown or unsupported chart: ${s}`;
+    if (!m || m.kind === 'stacked' || m.kind === 'bottoms' || m.kind === 'rallies') return `unknown or unsupported chart: ${s}`;
   }
   return null;
 }

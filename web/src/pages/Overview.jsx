@@ -58,7 +58,7 @@ export default function Overview({ catalog, latest, onOpen }) {
               {g.metrics.map(m => {
                 const v = latest.values?.[m.slug];
                 // Panel-set and distribution kinds have no single latest value.
-                const special = m.kind === 'stacked' || m.kind === 'urpd' || m.kind === 'bottoms';
+                const special = m.kind === 'stacked' || m.kind === 'urpd' || m.kind === 'bottoms' || m.kind === 'rallies';
                 return (
                   <button key={m.slug} className="card" onClick={() => onOpen(m.slug)}>
                     <div className="card-top">
@@ -68,6 +68,7 @@ export default function Overview({ catalog, latest, onOpen }) {
                           {m.kind === 'stacked' ? 'View bands →'
                             : m.kind === 'urpd' ? 'View distribution →'
                             : m.kind === 'bottoms' ? 'Compare cycle lows →'
+                            : m.kind === 'rallies' ? 'View bear rallies →'
                             : fmt(v?.value, m.format, m.unit)}
                         </div>
                       </div>

@@ -272,11 +272,20 @@ function toBlob(canvas) {
  * Rejects when no chart is on screen so the caller can fall back.
  */
 export async function chartToPngBlob(container, { title = '', value = '', scale = 2, legendFrom = null, watermarkSize = 20 } = {}) {
-  const svg = container?.querySelector('svg.recharts-surface');
-  if (!svg) throw new Error('no chart to copy');
+  // Every recharts surface in the box, at its on-screen offset: a chart made
+  // of stacked panes (price over rallies) copies as one plot, the gap between
+  // the panes included, and the watermark centres on the whole.
+  const svgs = [...(container?.querySelectorAll('svg.recharts-surface') ?? [])];
+  if (!svgs.length) throw new Error('no chart to copy');
   await fontsReady();
 
-  const { img, w: cw, h: ch } = await snapSvg(svg, scale);
+  const snaps = await Promise.all(svgs.map(async (svg) => {
+    const r = svg.getBoundingClientRect();
+    return { x: r.left, y: r.top, ...(await snapSvg(svg, scale)) };
+  }));
+  const minX = Math.min(...snaps.map(s => s.x)), minY = Math.min(...snaps.map(s => s.y));
+  const cw = Math.round(Math.max(...snaps.map(s => s.x + s.w)) - minX);
+  const ch = Math.round(Math.max(...snaps.map(s => s.y + s.h)) - minY);
   const legend = layoutLegend(readLegend(legendFrom ?? container), cw);
   const headerH = title ? 40 : 0;
   const W = cw + PAD * 2;
@@ -293,7 +302,7 @@ export async function chartToPngBlob(container, { title = '', value = '', scale 
 
   let y = PAD;
   if (title) { drawHeader(ctx, W, y, title, value, p); y += headerH; }
-  ctx.drawImage(img, PAD, y, cw, ch);
+  for (const s of snaps) ctx.drawImage(s.img, PAD + Math.round(s.x - minX), y + Math.round(s.y - minY), s.w, s.h);
   drawWatermark(ctx, PAD, y, cw, ch, p, watermarkSize);
   y += ch + 14;
   if (legend.rows.length) drawLegend(ctx, legend.rows, PAD, y, cw, p);
