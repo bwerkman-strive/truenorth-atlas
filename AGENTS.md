@@ -54,6 +54,8 @@ server/src/
                    (kind 'rallies': each bear's rally off its running low)
   priceQuality.js  register of known-bad close windows (Feb 2014 Mt. Gox stretch); consulted by
                    rally math and named in method copy; never used to alter stored prices
+  story.js         the story layer (/api/story/:slug): latest value + percentile, current zone and
+                   its tenure, the reading at every cycle peak/low, and the templated takeaway sentence
   metricCopy.js    admin-editable overrides for catalog explain/method prose (merged by /api/catalog)
   api.js           read API, /api/status, /api/series, /api/cycles, /api/spot, mounts
   explorer.js      block/tx/address lookups (DB-first, RPC-enriched), search, rate limiter
@@ -68,8 +70,8 @@ server/worker-entrypoint.sh  waits for Tor bootstrap (skipped if TOR_SOCKS_PROXY
                              args — default node src/sync.js; atlas-api passes node src/api.js
 web/src/
   api.js           API client; format.js pure formatters; epoch.js pure halving math;
-                   sma.js + bottomsRows.js + ralliesRows.js pure chart-row helpers; chartTheme.js shared
-                   recharts chrome + EPOCH_COLORS
+                   sma.js + bottomsRows.js + ralliesRows.js + storyMarks.js pure chart helpers;
+                   chartTheme.js shared recharts chrome + EPOCH_COLORS; chartImage.js story-card PNG export
   App.jsx          hash router (#/, #/m/:slug, #/explorer, #/b|tx|a/:x, #/admin), header, footer
   theme.css        entire design system incl. responsive layer — no CSS frameworks
   components/      EpochRings (the living logo), BearingDial, AlertForm, SubscribeForm, NewsletterTab,

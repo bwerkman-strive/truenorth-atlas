@@ -42,6 +42,7 @@ export const api = {
   cycles: (slug) => get(`/api/cycles/${slug}`),
   bottoms: () => get('/api/bottoms'),
   rallies: () => get('/api/rallies'),
+  story: (slug) => get(`/api/story/${slug}`),
   urpd: (day) => get('/api/urpd' + (day ? `?day=${day}` : '')),
   spot: () => get('/api/spot'),
   createAlert: (body) => fetch(BASE + '/api/alerts', {

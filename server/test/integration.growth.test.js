@@ -286,3 +286,30 @@ test('the rallies catalog entry is a panel set too: no cycle overlay, no alerts,
   assert.equal(r.status, 400);
   assert.match((await r.json()).error, /unsupported/);
 });
+
+// ---------------------------------------------------------------------------
+// Story layer: /api/story/:slug states where a line metric sits.
+test('story endpoint serves the facts and a takeaway sentence for a line metric', async () => {
+  const { status, headers, body } = await j('/api/story/mvrv');
+  assert.equal(status, 200);
+  assert.match(headers.get('cache-control'), /max-age=/);
+  assert.deepEqual(Object.keys(body).sort(), ['asOf', 'count', 'extremes', 'percentile', 'slug', 'streak', 'takeaway', 'value']);
+  assert.equal(body.slug, 'mvrv');
+  assert.ok(body.asOf >= '2024-05-18', 'latest mvrv row, including the alert-test inserts');
+  assert.ok(typeof body.value === 'number');
+  assert.ok(body.percentile >= 0 && body.percentile <= 1);
+  assert.deepEqual(Object.keys(body.streak).sort(), ['days', 'since', 'zone']);
+  assert.ok(body.streak.days >= 1);
+  assert.match(body.takeaway, /^MVRV Ratio is \d/);
+  assert.match(body.takeaway, /higher than \d+% of all daily readings\./);
+  assert.ok(!body.takeaway.includes('—'), 'no em-dashes in user-facing copy');
+  assert.ok(Array.isArray(body.extremes));
+});
+
+test('story endpoint guards its inputs', async () => {
+  assert.equal((await fetch(base + '/api/story/not-a-metric')).status, 404);
+  assert.equal((await fetch(base + '/api/story/hodl-waves')).status, 400);
+  assert.equal((await fetch(base + '/api/story/bottom-comparison')).status, 400);
+  assert.equal((await fetch(base + '/api/story/bear-rallies')).status, 400);
+  assert.equal((await fetch(base + '/api/story/cost-basis-distribution')).status, 400);
+});

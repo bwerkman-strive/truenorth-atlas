@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ResponsiveContainer, ComposedChart, Line, Area, AreaChart, Bar, BarChart, Cell,
-  XAxis, YAxis, Tooltip, ReferenceArea, ReferenceLine, CartesianGrid,
+  XAxis, YAxis, Tooltip, ReferenceArea, ReferenceLine, ReferenceDot, CartesianGrid,
 } from 'recharts';
 import { api, fmt, compact, fmtDay, axisTick } from '../api.js';
 import { smaByDay } from '../sma.js';
@@ -10,6 +10,7 @@ import AlertForm from '../components/AlertForm.jsx';
 import BottomsChart from '../components/BottomsChart.jsx';
 import RalliesChart from '../components/RalliesChart.jsx';
 import { TOOLTIP_PROPS, EPOCH_COLORS, EPOCH_WIDTH } from '../chartTheme.js';
+import { buildMarks } from '../storyMarks.js';
 
 const RANGES = [
   { id: '1y', label: '1Y', days: 365 },
@@ -55,10 +56,20 @@ const WAVE_COLORS = [
   '#4ADE80', '#34D399', '#22D3EE', '#38BDF8', '#60A5FA', '#C084FC',
 ];
 
-function toneColor(t) {
-  return t === 'hot' ? 'rgba(248,113,113,0.10)' : t === 'warm' ? 'rgba(251,191,36,0.10)'
-    : t === 'cold' ? 'rgba(96,165,250,0.10)' : 'transparent';
+// Zone bands: hot/warm/cold washes. The band the latest reading sits in is
+// drawn at a stronger alpha (story layer) so the chart says where we are.
+function toneColor(t, a = 0.10) {
+  return t === 'hot' ? `rgba(248,113,113,${a})` : t === 'warm' ? `rgba(251,191,36,${a})`
+    : t === 'cold' ? `rgba(96,165,250,${a})` : 'transparent';
 }
+// Story annotations: peak and low readings sit above their dot (the glyph
+// says which; below would collide with the axis), the current-value callout
+// runs leftwards from the last point.
+const MARK_LABEL = {
+  peak: { position: 'top', fill: 'var(--text-dim)', fontSize: 10 },
+  low: { position: 'top', fill: 'var(--text-dim)', fontSize: 10 },
+  now: { position: 'left', fill: 'var(--text)', fontSize: 11, fontWeight: 600 },
+};
 
 export default function MetricDetail({ metric, latestVal, onBack, categories, features }) {
   // Projection metrics open on full history: the schedule is the point.
@@ -71,6 +82,8 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   const [urpd, setUrpd] = useState(null);
   const [bottoms, setBottoms] = useState(null);
   const [rallies, setRallies] = useState(null);
+  const [story, setStory] = useState(null);       // /api/story facts (scalar metrics)
+  const [storyOn, setStoryOn] = useState(true);   // annotations on the timeline chart
   const [err, setErr] = useState(null);
   const [copied, setCopied] = useState('');   // transient confirmation label
   const [shareOpen, setShareOpen] = useState(false);
@@ -102,8 +115,17 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
 
   useEffect(() => {
     setView('series'); setCycles(null); setUnitIdx(0); setShowProj(true); setShowPrice(false);
-    setSmaOn(new Set(metric.sma?.active ?? [])); setSmaSrc(null);
+    setSmaOn(new Set(metric.sma?.active ?? [])); setSmaSrc(null); setStory(null);
   }, [metric.slug]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The story layer: fetched once per scalar metric, independent of the range
+  // and scale toggles. A failure leaves the chart un-annotated, nothing more.
+  useEffect(() => {
+    if (!scalar) return;
+    let live = true;
+    api.story(metric.slug).then(s => { if (live) setStory(s); }).catch(() => { if (live) setStory(null); });
+    return () => { live = false; };
+  }, [metric.slug, scalar]);
 
   // Moving averages come from their own fetch of the FULL series, undecimated
   // and unclipped: the visible fetch is range-limited and downsampled, which
@@ -187,11 +209,16 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
     } catch { window.prompt('Copy this share link:', api.shareUrl(metric.slug)); }
   };
 
-  const copyChart = async () => {
+  // aspect: 'auto' (as on screen), 'wide' (16:9 for X and LinkedIn), 'square'.
+  const copyChart = async (aspect = 'auto') => {
     setShareOpen(false);
     // Rasterization is passed unresolved (Safari needs the clipboard write in
     // the click's own task, see copyPng). Bottoms copy the whole tile grid.
-    const meta = { title: metric.name, value: headlineValue };
+    const meta = {
+      title: metric.name, value: headlineValue, aspect,
+      takeaway: storyText, asOf: asOfDay,
+      percentile: scalar ? story?.percentile ?? null : null,
+    };
     const png = isBottoms
       ? tilesToPngBlob(chartBoxRef.current, meta)
       : chartToPngBlob(chartBoxRef.current, meta);
@@ -311,6 +338,24 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
     : metric.kind === 'urpd' && urpd?.avg != null ? fmt(urpd.avg, 'usd')
     : curCycle ? fmt(curCycle.bottom.price, 'usd')
     : curBear ? pctSigned(curBear.current) : '';
+  // One sentence for the export (and, for scalar metrics, the page): the
+  // story layer's templated takeaway, or the panel kinds' own facts.
+  const storyText = scalar ? (story?.takeaway ?? '')
+    : curCycle ? `Epoch ${curCycle.epoch} ${curCycle.provisional ? 'low to date' : 'low'} ${fmt(curCycle.bottom.price, 'usd')} on ${fmtDay(curCycle.bottom.day)}, `
+        + `${Math.round(curCycle.drawdown * 100)}% below the ${fmtDay(curCycle.peak.day)} peak${curCycle.provisional ? ' (provisional)' : ''}.`
+    : curBear ? `Epoch ${curBear.epoch} rally ${pctSigned(curBear.current)} off the ${fmtDay(curBear.low.day)} low, day ${curBear.days} of the bear. `
+        + `Largest rallies of the prior bears: ${rallies.bears.filter(b => !b.ongoing).map(b => `+${Math.round(b.maxRally.value * 100)}%`).join(', ')}.`
+    : '';
+  const asOfDay = scalar ? story?.asOf ?? data?.rows?.[data.rows.length - 1]?.day ?? null
+    : metric.kind === 'urpd' ? urpd?.day ?? null
+    : curCycle ? curCycle.values[curCycle.values.length - 1]?.day ?? null
+    : lastBear ? lastBear.through : null;
+  // Chart annotations from the story facts, snapped onto the drawn rows.
+  const storyMarks = useMemo(() => {
+    if (!storyOn || !scalar || view !== 'series' || !story || !rows.length || metric.projection) return [];
+    return buildMarks(story, rows, { format: metric.format, unit: displayUnit, timeAxis, logScale, unitFactor });
+  }, [storyOn, scalar, view, story, rows, metric, displayUnit, timeAxis, logScale, unitFactor]);
+  const liveZoneLabel = storyOn && scalar ? story?.streak?.zone?.label ?? null : null;
   // Band order comes from the catalog: the API's JSONB rows arrive with keys
   // re-sorted by Postgres (length, then bytes), so deriving order from the
   // data would scramble the stack and the tooltip.
@@ -343,6 +388,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
         {scalar && (
           <div className="bigval">{fmt(unitOpts ? scaleVal(latestVal) : latestVal, metric.format, displayUnit)}</div>
         )}
+        {scalar && story?.takeaway && <p className="takeaway">{story.takeaway}</p>}
         {metric.kind === 'urpd' && urpd?.avg != null && (
           <div className="bigval">
             {fmt(urpd.avg, 'usd')}<span className="bigval-sub">average cost basis</span>
@@ -406,6 +452,14 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             </button>
           </div>
         )}
+        {view === 'series' && scalar && story && (
+          <div className="grp">
+            <button className={storyOn ? 'on' : ''} onClick={() => setStoryOn(!storyOn)}
+              title="Current-value callout, live zone, and cycle peak/low readings">
+              {storyOn ? '✓ ' : ''}Story
+            </button>
+          </div>
+        )}
         {view === 'series' && scalar && smaOpts && (
           <div className="grp" role="group" aria-label="Simple moving averages">
             {smaOpts.windows.map(w => (
@@ -428,8 +482,12 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
           {shareOpen && (
             <div className="share-pop" role="menu">
               <button role="menuitem" onClick={copyLink}>Copy link</button>
-              <button role="menuitem" onClick={copyChart} disabled={!hasChart}
+              <button role="menuitem" onClick={() => copyChart('auto')} disabled={!hasChart}
                 title={hasChart ? undefined : 'No chart on screen yet'}>Copy chart image</button>
+              <button role="menuitem" onClick={() => copyChart('wide')} disabled={!hasChart}
+                title="16:9 story card for X and LinkedIn">Copy for X · 16:9</button>
+              <button role="menuitem" onClick={() => copyChart('square')} disabled={!hasChart}
+                title="1:1 story card">Copy square · 1:1</button>
               <button role="menuitem" onClick={shareToX}>Share on X</button>
             </div>
           )}
@@ -569,7 +627,18 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
               )}
               {!logScale && (metric.zones ?? []).map((z, i) => z.tone === 'line'
                 ? <ReferenceLine key={i} yAxisId="m" y={z.from * unitFactor} stroke="var(--text-faint)" strokeDasharray="4 4" />
-                : <ReferenceArea key={i} yAxisId="m" y1={z.from * unitFactor} y2={z.to * unitFactor} fill={toneColor(z.tone)} stroke="none" />)}
+                : <ReferenceArea key={i} yAxisId="m" y1={z.from * unitFactor} y2={z.to * unitFactor} stroke="none"
+                    fill={toneColor(z.tone, liveZoneLabel === z.label ? 0.26 : 0.10)}
+                    label={liveZoneLabel === z.label && story?.streak ? {
+                      value: `${z.label} · ${story.streak.days}d`, position: 'insideTopRight',
+                      fill: 'var(--text-dim)', fontSize: 10,
+                    } : undefined} />)}
+              {storyMarks.map(mk => (
+                <ReferenceDot key={mk.key} yAxisId="m" x={mk.x} y={mk.y} r={mk.kind === 'now' ? 4 : 3}
+                  fill={mk.kind === 'now' ? seriesColor(data.columns[0], 0) : 'var(--text)'}
+                  stroke="var(--deep-black)" strokeWidth={1} isFront
+                  label={{ value: mk.text, ...MARK_LABEL[mk.kind] }} />
+              ))}
               {halvingMarks.map((h, i) => (
                 <ReferenceLine key={h.height} yAxisId="m" x={h.x} stroke="var(--text-faint)" strokeDasharray="3 5"
                   strokeOpacity={h.label ? 1 : 0.45}

@@ -164,6 +164,8 @@ button { font-family: inherit; }
 .detail-hd .short { color: var(--text-dim); max-width: 760px; }
 .bigval { font-family: var(--font-data); font-size: 26px; font-weight: 600; color: var(--starbright); font-variant-numeric: tabular-nums; }
 .bigval-sub { font-family: var(--font-ui); font-size: 13px; font-weight: 400; color: var(--text-dim); margin-left: 10px; }
+/* The story layer's one-sentence takeaway: facts the chart annotates, in prose */
+.takeaway { margin: 8px 0 0; max-width: 760px; color: var(--text-dim); font-size: 13.5px; line-height: 1.55; }
 
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
 .toolbar .grp { display: flex; border: 1px solid var(--ink-line); border-radius: var(--radius-lg); overflow: hidden; }
