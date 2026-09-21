@@ -397,11 +397,10 @@ button { font-family: inherit; }
 .cycle-key i.fill { width: 14px; height: 10px; border-radius: 2px; }
 
 /* ---------- bear-market bottoms: one tile per epoch ---------- */
-/* Two columns; an odd trailing tile (the current, provisional epoch) spans
-   both so the grid closes cleanly and the live cycle gets the most room. */
-.bc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+/* One full-width tile per row: every epoch gets the same wide plot, so the
+   shapes read directly against each other down the page. */
+.bc-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .bc-tile { padding: 12px 6px 4px; min-width: 0; }
-.bc-tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .bc-hd { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 0 8px 8px 10px;
   font-family: var(--font-ui); font-size: 12px; color: var(--text-dim); }
 .bc-hd b { color: var(--text); font-weight: 600; font-size: 13px; }
@@ -481,25 +480,21 @@ button { font-family: inherit; }
 /* Chart heights are CSS-owned so they can adapt per breakpoint. The wrapper,
    not the chart, owns layout — which is also what keeps CLS at 0 (§6.4). */
 .chartwrap { height: 440px; }
-/* Bear-market bottoms: one tile per epoch; the full-width trailing tile is
-   taller so its wider plot keeps a similar aspect. */
-.chartwrap.tile { height: 260px; }
-.bc-tile:last-child:nth-child(odd) .chartwrap.tile { height: 300px; }
+/* Bear-market bottoms: one full-width tile per epoch */
+.chartwrap.tile { height: 300px; }
 
 /* --- Ultra-wide: let the grid breathe, keep prose readable --- */
 @media (min-width: 1700px) {
   .wrap { max-width: 1400px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
   .chartwrap { height: 520px; }
-  .chartwrap.tile { height: 300px; }
-  .bc-tile:last-child:nth-child(odd) .chartwrap.tile { height: 340px; }
+  .chartwrap.tile { height: 340px; }
 }
 
 /* --- Large phones / small tablets --- */
 @media (max-width: 760px) {
   .chartwrap { height: 360px; }
-  .bc-grid { grid-template-columns: minmax(0, 1fr); }
-  .chartwrap.tile, .bc-tile:last-child:nth-child(odd) .chartwrap.tile { height: 230px; }
+  .chartwrap.tile { height: 230px; }
   .bigval { font-size: clamp(20px, 5.6vw, 26px); }
   .hero { padding-top: 24px; }
   .nl-actions { flex-direction: column; align-items: stretch; }
@@ -520,7 +515,7 @@ button { font-family: inherit; }
   .hdr-nav a { padding: 6px 10px; }
   .wrap { padding: 0 14px; }
   .chartwrap { height: 320px; }
-  .chartwrap.tile, .bc-tile:last-child:nth-child(odd) .chartwrap.tile { height: 210px; }
+  .chartwrap.tile { height: 210px; }
   .grid { grid-template-columns: 1fr; }        /* single, full-width cards */
   .card { padding: 16px 16px 14px; }
   .xlabel { flex: 0 0 96px; font-size: 11.5px; }
@@ -539,7 +534,7 @@ button { font-family: inherit; }
 @media (max-width: 380px) {
   .wrap { padding: 0 10px; }
   .chartwrap { height: 280px; }
-  .chartwrap.tile, .bc-tile:last-child:nth-child(odd) .chartwrap.tile { height: 190px; }
+  .chartwrap.tile { height: 190px; }
   .hdr-price { font-size: 12.5px; }
   .catnav button { padding: 6px 11px; font-size: 11px; }
   /* Latest blocks: Height and Time only */
@@ -562,7 +557,7 @@ body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-ins
 /* --- Short landscape viewports (phone rotated): don't let charts dominate --- */
 @media (max-height: 480px) and (orientation: landscape) {
   .chartwrap { height: 78vh; min-height: 240px; }
-  .chartwrap.tile, .bc-tile:last-child:nth-child(odd) .chartwrap.tile { height: 60vh; min-height: 170px; }
+  .chartwrap.tile { height: 60vh; min-height: 170px; }
   .hero { padding: 14px 0 4px; }
 }
 

@@ -33,8 +33,7 @@ const COPY_LABEL = { copied: '✓ Copied', downloaded: '✓ Downloaded', failed:
 
 // One tile per epoch, each a prominent card with its own caption, watermark
 // and copy button. The group container (in MetricDetail) owns the whole-grid
-// copy; `tilesToPngBlob` reproduces this layout from the DOM. One full-width
-// tile per row (theme.css .bc-grid).
+// copy; `tilesToPngBlob` reproduces this layout from the DOM.
 export default function BottomsChart({ data, logScale, metricName }) {
   const ticks = windowTicks(data.window);
   const tileRefs = useRef({});
@@ -50,7 +49,6 @@ export default function BottomsChart({ data, logScale, metricName }) {
       title: `${metricName} · Epoch ${c.epoch}`,
       value: `${c.provisional ? 'Low to date' : 'Low'} ${fmt(c.bottom.price, 'usd')} · ${fmtDay(c.bottom.day)}`,
       legendFrom: groupRef.current,
-      watermarkSize: 15,
     });
     const status = await copyPng(png, `bottom-comparison-epoch-${c.epoch}-true-north-atlas.png`);
     setCopied({ epoch: c.epoch, status });
