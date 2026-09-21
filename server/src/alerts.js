@@ -12,7 +12,7 @@
 import crypto from 'node:crypto';
 import express from 'express';
 import { pool } from './db.js';
-import { bySlug } from './catalog.js';
+import { bySlug, isPanel } from './catalog.js';
 import { config } from './config.js';
 import { sendEmail, renderEmail, chartBlock, EMAIL_COLORS } from './email.js';
 
@@ -44,7 +44,7 @@ export function alertsRouter(rateLimiter) {
       const m = bySlug[slug];
 
       if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'valid email required' });
-      if (!m || m.kind === 'stacked' || m.kind === 'multi' || m.kind === 'urpd' || m.kind === 'bottoms' || m.kind === 'rallies') return res.status(400).json({ error: 'unknown or unsupported metric' });
+      if (!m || isPanel(m) || m.kind === 'multi') return res.status(400).json({ error: 'unknown or unsupported metric' });
       if (!['above', 'below'].includes(condition)) return res.status(400).json({ error: "condition must be 'above' or 'below'" });
       if (!Number.isFinite(threshold)) return res.status(400).json({ error: 'numeric threshold required' });
 

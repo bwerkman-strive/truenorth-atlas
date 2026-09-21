@@ -11,7 +11,7 @@ import compression from 'compression';
 import pino from 'pino';
 import { pool, migrate, getState } from './db.js';
 import { projectSupply } from './supply.js';
-import { CATEGORIES, METRICS, bySlug } from './catalog.js';
+import { CATEGORIES, METRICS, bySlug, isPanel } from './catalog.js';
 import { config } from './config.js';
 import { explorerRouter, publicRateLimit } from './explorer.js';
 import { adminRouter, requireApiKey } from './keys.js';
@@ -22,6 +22,7 @@ import { getCopyOverrides, metricCopyAdminRouter } from './metricCopy.js';
 import { getSpot } from './prices.js';
 import { buildBottoms, buildRallies } from './bottoms.js';
 import { buildStory } from './story.js';
+import { buildRuns, buildUnderwater, buildScorecard } from './cycleCharts.js';
 
 const log = pino({ level: process.env.LOG_LEVEL || 'info' });
 const app = express();
@@ -68,7 +69,7 @@ const HALVINGS = [
 app.get('/api/cycles/:slug', async (req, res) => {
   const m = bySlug[req.params.slug];
   if (!m) return res.status(404).json({ error: 'unknown metric' });
-  if (m.kind === 'stacked' || m.kind === 'urpd' || m.kind === 'bottoms' || m.kind === 'rallies') return res.status(400).json({ error: 'cycle overlays are for line metrics' });
+  if (isPanel(m)) return res.status(400).json({ error: 'cycle overlays are for line metrics' });
   const col = (Array.isArray(m.column) ? m.column[0] : m.column);
   if (!IDENT_RE.test(col)) return res.status(400).json({ error: 'bad metric' });
   try {
@@ -152,15 +153,46 @@ app.get('/api/rallies', async (_req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ---- Cycle charts, sprint 1 ----------------------------------------------------
+// GET /api/runs        each recovery from a cycle low as a multiple of the low
+// GET /api/underwater  drawdown from the all-time high, every day, with bears
+// GET /api/scorecard   one row of cycle facts per epoch
+// All three share the detector; see cycleCharts.js.
+const PRICE_ROWS = `SELECT day::text AS day, price::float AS price FROM metrics_daily
+                    WHERE price IS NOT NULL ORDER BY day ASC`;
+app.get('/api/runs', async (_req, res) => {
+  try {
+    const r = await pool.query(PRICE_ROWS);
+    cache(res);
+    res.json(buildRuns(r.rows, HALVINGS));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/underwater', async (_req, res) => {
+  try {
+    const r = await pool.query(PRICE_ROWS);
+    cache(res);
+    res.json(buildUnderwater(r.rows, HALVINGS));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/scorecard', async (_req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT day::text AS day, price::float AS price, mvrv::float AS mvrv,
+              supply_profit_pct::float AS supply_profit_pct
+       FROM metrics_daily WHERE price IS NOT NULL ORDER BY day ASC`);
+    cache(res);
+    res.json(buildScorecard(r.rows, HALVINGS));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ---- Story layer --------------------------------------------------------------
 // GET /api/story/:slug -> the facts a line metric's chart annotates and the
 // one-sentence takeaway: latest value and percentile, current zone and its
 // tenure, the reading at every cycle peak and low. See story.js.
-const PANEL_KINDS = new Set(['stacked', 'urpd', 'bottoms', 'rallies']);
 app.get('/api/story/:slug', async (req, res) => {
   const m = bySlug[req.params.slug];
   if (!m) return res.status(404).json({ error: 'unknown metric' });
-  if (PANEL_KINDS.has(m.kind)) return res.status(400).json({ error: 'stories are for line metrics' });
+  if (isPanel(m)) return res.status(400).json({ error: 'stories are for line metrics' });
   const col = Array.isArray(m.column) ? m.column[0] : m.column;
   if (!IDENT_RE.test(col)) return res.status(400).json({ error: 'bad metric' });
   try {
@@ -238,7 +270,7 @@ app.get('/api/latest', async (_req, res) => {
     const spark = await pool.query(
       `SELECT * FROM metrics_daily ORDER BY day DESC LIMIT 30`);
     // Full-history percentile of the latest value per metric, one scan.
-    const nonScalar = (m) => m.kind === 'stacked' || m.kind === 'urpd' || m.kind === 'bottoms' || m.kind === 'rallies';
+    const nonScalar = isPanel;
     const numericCols = [...new Set(METRICS.filter(m => !nonScalar(m)).map(m => m.column))]
       .filter(c => IDENT_RE.test(c));
     const pctSql = numericCols.map(c =>
@@ -251,9 +283,9 @@ app.get('/api/latest', async (_req, res) => {
     const values = {};
     for (const m of METRICS) {
       values[m.slug] = {
-        // The urpd blob is fetched on demand via /api/urpd, the bottoms panels
-        // via /api/bottoms and the rallies via /api/rallies; keep /api/latest light.
-        value: m.kind === 'urpd' || m.kind === 'bottoms' || m.kind === 'rallies' ? null
+        // Panel kinds fetch their own payloads (/api/urpd, /api/bottoms, ...);
+        // keep /api/latest light. Stacked keeps its JSONB bands.
+        value: isPanel(m) && m.kind !== 'stacked' ? null
           : row[m.column] !== null ? Number(row[m.column]) || row[m.column] : null,
         percentile: nonScalar(m) ? undefined
           : (pct[m.column] === null || pct[m.column] === undefined ? null : Number(pct[m.column])),

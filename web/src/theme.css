@@ -415,6 +415,10 @@ button { font-family: inherit; }
   cursor: pointer; transition: background-color .15s, color .15s; white-space: nowrap; }
 .bc-copy:hover { background: rgba(81, 79, 96, 0.40); color: var(--starbright); }
 .bc-tile .chart-watermark { font-size: 15px; }
+/* The scorecard is an SVG table: its height follows its width, and on narrow
+   screens it scrolls sideways like the explorer tables rather than shrinking. */
+.chartwrap.scorecard { height: auto; overflow-x: auto; padding-bottom: 4px; }
+.chartwrap.scorecard svg { display: block; min-width: 880px; }
 .bc-group .cycle-key { padding-top: 14px; }
 
 /* ---------- watermark / subscribe ---------- */

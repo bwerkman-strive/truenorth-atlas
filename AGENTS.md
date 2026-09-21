@@ -56,6 +56,8 @@ server/src/
                    rally math and named in method copy; never used to alter stored prices
   story.js         the story layer (/api/story/:slug): latest value + percentile, current zone and
                    its tenure, the reading at every cycle peak/low, and the templated takeaway sentence
+  cycleCharts.js   sprint-1 cycle charts on the shared detector: /api/runs (bull runs off each low),
+                   /api/underwater (drawdown from ATH), /api/scorecard (one row of cycle facts per epoch)
   metricCopy.js    admin-editable overrides for catalog explain/method prose (merged by /api/catalog)
   api.js           read API, /api/status, /api/series, /api/cycles, /api/spot, mounts
   explorer.js      block/tx/address lookups (DB-first, RPC-enriched), search, rate limiter
@@ -70,13 +72,16 @@ server/worker-entrypoint.sh  waits for Tor bootstrap (skipped if TOR_SOCKS_PROXY
                              args — default node src/sync.js; atlas-api passes node src/api.js
 web/src/
   api.js           API client; format.js pure formatters; epoch.js pure halving math;
-                   sma.js + bottomsRows.js + ralliesRows.js + storyMarks.js pure chart helpers;
+                   sma.js + bottomsRows.js + ralliesRows.js + cycleRows.js + storyMarks.js pure chart
+                   helpers; kinds.js mirrors catalog PANEL_KINDS (tested for parity); panelHeadlines.js
+                   pure headline/takeaway per panel kind; panels.jsx the kind -> component registry;
                    chartTheme.js shared recharts chrome + EPOCH_COLORS; chartImage.js story-card PNG export
   App.jsx          hash router (#/, #/m/:slug, #/explorer, #/b|tx|a/:x, #/admin), header, footer
   theme.css        entire design system incl. responsive layer — no CSS frameworks
   components/      EpochRings (the living logo), BearingDial, AlertForm, SubscribeForm, NewsletterTab,
                    BottomsChart (small-multiple cycle-low panels for the 'bottoms' catalog kind),
-                   RalliesChart (price pane over rally pane for the 'rallies' kind)
+                   RalliesChart (price pane over rally pane for the 'rallies' kind), RunsChart,
+                   UnderwaterChart, ScorecardChart (SVG table) for the 'runs' / 'underwater' / 'scorecard' kinds
   pages/           Overview, MetricDetail (timeline/cycles views), Explorer, Admin
 ```
 
