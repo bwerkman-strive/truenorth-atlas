@@ -419,6 +419,20 @@ button { font-family: inherit; }
    screens it scrolls sideways like the explorer tables rather than shrinking. */
 .chartwrap.scorecard { height: auto; overflow-x: auto; padding-bottom: 4px; }
 .chartwrap.scorecard svg { display: block; min-width: 880px; }
+/* Heatmap: a canvas of cells under an SVG overlay, both filling the wrapper */
+.chartwrap.heatmap { position: relative; height: 480px; }
+.chartwrap.heatmap canvas, .chartwrap.heatmap svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.hm-tip { position: absolute; z-index: 6; pointer-events: none; background: #323140; border: 1px solid #514F60;
+  border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.hm-tip b { color: var(--text); font-family: var(--font-data); font-weight: 600; }
+/* Clock: a square dial that scales with the wrapper */
+.chartwrap.clock { height: 600px; display: flex; justify-content: center; }
+.chartwrap.clock svg { height: 100%; width: auto; max-width: 100%; display: block; }
+/* The dial's centre carries its own label, so the watermark steps aside */
+.chartbox:has(.chartwrap.clock) .chart-watermark { top: auto; left: auto; right: 22px; bottom: 26px; transform: none; }
+.clock-scale { display: inline-flex; align-items: center; gap: 6px; }
+.clock-scale i { display: inline-block; width: 72px; height: 8px; border-radius: 2px;
+  background: linear-gradient(90deg, #60A5FA, #9CA3AF 45%, #FBBF24 75%, #F87171); }
 .bc-group .cycle-key { padding-top: 14px; }
 
 /* ---------- watermark / subscribe ---------- */
@@ -500,6 +514,8 @@ button { font-family: inherit; }
   .chartwrap.tile { height: 340px; }
   .chartwrap.rally-price { height: 400px; }
   .chartwrap.rally-pct { height: 180px; }
+  .chartwrap.heatmap { height: 560px; }
+  .chartwrap.clock { height: 680px; }
 }
 
 /* --- Large phones / small tablets --- */
@@ -508,6 +524,8 @@ button { font-family: inherit; }
   .chartwrap.tile { height: 230px; }
   .chartwrap.rally-price { height: 260px; }
   .chartwrap.rally-pct { height: 130px; }
+  .chartwrap.heatmap { height: 360px; }
+  .chartwrap.clock { height: 420px; }
   .bigval { font-size: clamp(20px, 5.6vw, 26px); }
   .hero { padding-top: 24px; }
   .nl-actions { flex-direction: column; align-items: stretch; }
@@ -531,6 +549,8 @@ button { font-family: inherit; }
   .chartwrap.tile { height: 210px; }
   .chartwrap.rally-price { height: 230px; }
   .chartwrap.rally-pct { height: 120px; }
+  .chartwrap.heatmap { height: 320px; }
+  .chartwrap.clock { height: 360px; }
   .grid { grid-template-columns: 1fr; }        /* single, full-width cards */
   .card { padding: 16px 16px 14px; }
   .xlabel { flex: 0 0 96px; font-size: 11.5px; }
@@ -552,6 +572,8 @@ button { font-family: inherit; }
   .chartwrap.tile { height: 190px; }
   .chartwrap.rally-price { height: 200px; }
   .chartwrap.rally-pct { height: 110px; }
+  .chartwrap.heatmap { height: 280px; }
+  .chartwrap.clock { height: 300px; }
   .hdr-price { font-size: 12.5px; }
   .catnav button { padding: 6px 11px; font-size: 11px; }
   /* Latest blocks: Height and Time only */

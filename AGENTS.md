@@ -58,6 +58,8 @@ server/src/
                    its tenure, the reading at every cycle peak/low, and the templated takeaway sentence
   cycleCharts.js   sprint-1 cycle charts on the shared detector: /api/runs (bull runs off each low),
                    /api/underwater (drawdown from ATH), /api/scorecard (one row of cycle facts per epoch)
+  heatmap.js       /api/heatmap: weekly urpd snapshots re-binned onto a fixed log price grid (memoized per day)
+  clock.js         /api/clock: each epoch as a ring (angle = time, open epoch by block progress), MVRV samples
   metricCopy.js    admin-editable overrides for catalog explain/method prose (merged by /api/catalog)
   api.js           read API, /api/status, /api/series, /api/cycles, /api/spot, mounts
   explorer.js      block/tx/address lookups (DB-first, RPC-enriched), search, rate limiter
@@ -81,7 +83,8 @@ web/src/
   components/      EpochRings (the living logo), BearingDial, AlertForm, SubscribeForm, NewsletterTab,
                    BottomsChart (small-multiple cycle-low panels for the 'bottoms' catalog kind),
                    RalliesChart (price pane over rally pane for the 'rallies' kind), RunsChart,
-                   UnderwaterChart, ScorecardChart (SVG table) for the 'runs' / 'underwater' / 'scorecard' kinds
+                   UnderwaterChart, ScorecardChart (SVG table) for the 'runs' / 'underwater' / 'scorecard' kinds,
+                   HeatmapChart (canvas cells + SVG overlay) and ClockChart (SVG dial) for 'heatmap' / 'clock'
   pages/           Overview, MetricDetail (timeline/cycles views), Explorer, Admin
 ```
 

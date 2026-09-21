@@ -9,11 +9,15 @@
 //   scale      whether the Linear/Log toggle applies
 //   layout     'tiles' renders in its own group (each tile carries a
 //              watermark); default renders inside the single chart box
+//   watermark  'corner' moves the exported watermark to the plot's lower
+//              right (the on-screen one moves via CSS); default centred
 import BottomsChart from './components/BottomsChart.jsx';
 import RalliesChart from './components/RalliesChart.jsx';
 import RunsChart from './components/RunsChart.jsx';
 import UnderwaterChart from './components/UnderwaterChart.jsx';
 import ScorecardChart from './components/ScorecardChart.jsx';
+import HeatmapChart from './components/HeatmapChart.jsx';
+import ClockChart from './components/ClockChart.jsx';
 import { HEADLINES } from './panelHeadlines.js';
 
 export const PANELS = {
@@ -36,5 +40,13 @@ export const PANELS = {
   scorecard: {
     Chart: ScorecardChart, endpoint: 'scorecard', headline: HEADLINES.scorecard, scale: false,
     loading: 'Compiling the scorecard…', empty: 'No completed cycle in the finalized history yet.',
+  },
+  heatmap: {
+    Chart: HeatmapChart, endpoint: 'heatmap', headline: HEADLINES.heatmap, scale: false,
+    loading: 'Mapping sixteen years of cost basis…', empty: 'No finalized cost-basis distribution yet.',
+  },
+  clock: {
+    Chart: ClockChart, endpoint: 'clock', headline: HEADLINES.clock, scale: false, watermark: 'corner',
+    loading: 'Winding the clock…', empty: 'No epoch with MVRV history yet.',
   },
 };

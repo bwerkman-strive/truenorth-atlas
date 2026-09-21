@@ -210,6 +210,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
       title: metric.name, value: headlineValue, aspect,
       takeaway: storyText, asOf: asOfDay,
       percentile: scalar ? story?.percentile ?? null : null,
+      watermarkPos: panel?.watermark ?? 'center',
     };
     const png = panel?.layout === 'tiles'
       ? tilesToPngBlob(chartBoxRef.current, meta)

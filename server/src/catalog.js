@@ -618,11 +618,27 @@ export const METRICS = [
     explain: 'The cheat sheet. One row per halving epoch with the facts that define its cycle: when and how high it peaked, when and how low it fell, how deep and how long the bear ran, the biggest rally inside it, what MVRV read at the top and at the bottom, what share of supply was in profit at the low, how many days after the halving the peak arrived, and how far the recovery out of the low has gone. The current epoch\'s row is provisional and updates every day.',
     method: 'Every figure derives from the shared cycle detector and the finalized daily metrics. MVRV and supply in profit are read on the peak and low days. The open epoch\'s bear length runs to the latest day. The run multiple is the next cycle\'s peak divided by the low, or the latest close for the open run.',
   },
+  {
+    slug: 'cost-basis-heatmap', column: 'price', columns: ['price'],
+    name: 'Cost Basis Heatmap', category: 'cycles',
+    format: 'usd', kind: 'heatmap', logDefault: true,
+    short: 'Where the supply was acquired, week by week since 2010: price levels lit by how much Bitcoin last moved there, with the close threading through.',
+    explain: 'Atlas snapshots the whole cost-basis distribution every day; this is that history laid out as terrain. Each column is a week, each row a price band, and the brightness is how much supply last changed hands in that band. Clusters form where buyers concentrated, sit underwater when price falls beneath them, and are reclaimed when it climbs back. The white line is the close. The densest clusters today are called out with their size and price range.',
+    method: 'Weekly samples (each Sunday plus the latest day) of the daily distribution, which buckets the live UTXO set by creation-day close into 100 uniform bins up to the highest close so far. Each bin is re-mapped onto a fixed logarithmic price grid by linear overlap. The lowest bin, coins acquired below one bin width including pre-market coins with no price, is not resolved to a level and is drawn as a faint band at the bottom. Brightness is each band\'s share of that day\'s supply, clipped at the 99th percentile of all cells.',
+  },
+  {
+    slug: 'cycle-clock', column: 'mvrv', columns: ['mvrv'],
+    name: 'Cycle Clock', category: 'cycles',
+    format: 'ratio', kind: 'clock',
+    short: 'Each halving epoch as a ring on one clock, colored by MVRV, with today\'s hand showing where every cycle stood at this hour.',
+    explain: 'Time in Bitcoin runs in halving epochs, so this chart bends each epoch into a ring: twelve o\'clock is the halving and a full turn is the next one. The color along each ring is MVRV, cold when the market trades below its cost basis and hot when it is stretched. Peaks and lows are marked where they fell on the dial, which is how regular the cycle has been. The hand is today, drawn across every ring, so the readings at the same hour in earlier cycles line up beside it.',
+    method: 'Closed epochs map days to angle by their actual length. The open epoch uses block progress (blocks since the halving out of 210,000) and projects its length from the days elapsed so far. Rings are sampled every third day and colored on a diverging MVRV scale: blue below 1, neutral near 1.5, red above 3. Peaks and lows come from the shared cycle detector. Readings at today\'s hour are the nearest sample on each closed ring.',
+  },
 ];
 
 // Kinds that render their own chart form instead of a scalar time series:
 // no latest value, percentile, sparkline, alert, cycle overlay or story.
-export const PANEL_KINDS = ['stacked', 'urpd', 'bottoms', 'rallies', 'runs', 'underwater', 'scorecard'];
+export const PANEL_KINDS = ['stacked', 'urpd', 'bottoms', 'rallies', 'runs', 'underwater', 'scorecard', 'heatmap', 'clock'];
 export const isPanel = (m) => PANEL_KINDS.includes(m?.kind);
 
 export const bySlug = Object.fromEntries(METRICS.map(m => [m.slug, m]));

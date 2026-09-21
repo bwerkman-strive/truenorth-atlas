@@ -23,6 +23,8 @@ import { getSpot } from './prices.js';
 import { buildBottoms, buildRallies } from './bottoms.js';
 import { buildStory } from './story.js';
 import { buildRuns, buildUnderwater, buildScorecard } from './cycleCharts.js';
+import { buildHeatmap } from './heatmap.js';
+import { buildClock } from './clock.js';
 
 const log = pino({ level: process.env.LOG_LEVEL || 'info' });
 const app = express();
@@ -182,6 +184,42 @@ app.get('/api/scorecard', async (_req, res) => {
        FROM metrics_daily WHERE price IS NOT NULL ORDER BY day ASC`);
     cache(res);
     res.json(buildScorecard(r.rows, HALVINGS));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ---- Cycle charts, sprint 2 ----------------------------------------------------
+// GET /api/heatmap  weekly samples of the daily cost-basis distribution on a
+//                   fixed log price grid (heatmap.js). The JSONB is a few MB
+//                   even sampled, so the result is memoized per finalized day.
+// GET /api/clock    each epoch as a ring colored by MVRV, with today's hand
+//                   (clock.js); needs the synced tip for block progress.
+let heatmapMemo = { asOf: null, payload: null };
+app.get('/api/heatmap', async (_req, res) => {
+  try {
+    const asOf = (await pool.query(
+      'SELECT MAX(day)::text AS d FROM metrics_daily WHERE urpd IS NOT NULL')).rows[0].d;
+    if (!asOf) return res.status(404).json({ error: 'no finalized distribution yet' });
+    if (heatmapMemo.asOf !== asOf) {
+      const r = await pool.query(
+        `SELECT day::text AS day, price::float AS price, supply_profit_pct::float AS supply_profit_pct, urpd
+         FROM metrics_daily
+         WHERE urpd IS NOT NULL AND (EXTRACT(DOW FROM day) = 0 OR day = $1::date)
+         ORDER BY day ASC`, [asOf]);
+      heatmapMemo = { asOf, payload: buildHeatmap(r.rows) };
+    }
+    cache(res);
+    res.json(heatmapMemo.payload);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/clock', async (_req, res) => {
+  try {
+    const [r, tip] = await Promise.all([
+      pool.query(`SELECT day::text AS day, price::float AS price, mvrv::float AS mvrv
+                  FROM metrics_daily WHERE price IS NOT NULL ORDER BY day ASC`),
+      pool.query('SELECT MAX(height)::int AS h FROM blocks'),
+    ]);
+    cache(res);
+    res.json(buildClock(r.rows, HALVINGS, { tipHeight: tip.rows[0].h }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
