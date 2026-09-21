@@ -20,10 +20,17 @@
 //   4. The title and latest value live above .chartbox entirely, and a shared
 //      image without them has no context.
 //
+// The output is a "story card": header (title, percentile gauge, headline
+// value), the one-sentence takeaway, the chart with its watermark, the
+// legend, and an as-of footer. `aspect` frames it as drawn ('auto'), 16:9
+// ('wide', for X and LinkedIn) or 1:1 ('square'), padding the ground rather
+// than distorting anything.
+//
 // Two entry points share the drawing code: chartToPngBlob() for a single
-// chart box, and tilesToPngBlob() for a grid of chart tiles (the bear-market
-// bottoms), which reproduces each tile at its on-screen position with its own
-// caption and watermark under one shared header and legend.
+// chart box (every recharts surface in it, stacked as on screen), and
+// tilesToPngBlob() for a grid of chart tiles (the bear-market bottoms), which
+// reproduces each tile at its on-screen position with its own caption and
+// watermark under one shared header and legend.
 
 // Copied verbatim onto every node. Values are NOT filtered for 'none' or
 // 'normal': a child computing `stroke: none` under a parent that inherited a
@@ -43,6 +50,7 @@ const FONT_FAMILY = 'IBM Plex Sans';
 const UI = 'Inter, system-ui, sans-serif';
 const MONO = '"JetBrains Mono", ui-monospace, monospace';
 const PAD = 20;
+const ASPECT = { wide: 16 / 9, square: 1 };
 
 let fontCssPromise = null;
 
@@ -152,6 +160,9 @@ function palette() {
     faint: cssVar('--text-faint', '#8f979f'),
     orange: cssVar('--orange', '#f7941d'),
     amber: cssVar('--amber', '#fbbf24'),
+    cold: cssVar('--cold', '#60a5fa'),
+    aurora: cssVar('--aurora', '#34d399'),
+    hot: cssVar('--hot', '#f87171'),
     ground: cssVar('--deep-black', '#1a1a1a'),
     panel: cssVar('--ink-panel', 'rgba(50, 49, 64, 0.3)'),
     line: cssVar('--ink-line', 'rgba(81, 79, 96, 0.3)'),
@@ -179,17 +190,44 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// Title left, latest value right, mirroring the page header.
-function drawHeader(ctx, W, y, title, value, p) {
+// The percentile gauge, the Bearing Dial redrawn in canvas: a 234° arc,
+// cold below the 20th percentile, hot above the 80th, aurora between.
+function drawGauge(ctx, cx, cy, size, pct, p) {
+  const r = size / 2 - 3;
+  const a0 = Math.PI * 1.15, a1 = Math.PI * -0.15;
+  const ang = a0 + (a1 - a0) * Math.max(0, Math.min(1, pct));
+  const color = pct < 0.2 ? p.cold : pct > 0.8 ? p.hot : p.aurora;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 2.5;
+  // Canvas angles run clockwise; the dial's math runs counter-clockwise.
+  ctx.strokeStyle = p.line;
+  ctx.beginPath(); ctx.arc(cx, cy, r, -a0, -a1, false); ctx.stroke();
+  ctx.strokeStyle = color;
+  ctx.beginPath(); ctx.arc(cx, cy, r, -a0, -ang, false); ctx.stroke();
+  ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + (r - 1) * Math.cos(ang), cy - (r - 1) * Math.sin(ang)); ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// Title left; headline value right in mono with the gauge just before it.
+function drawHeader(ctx, x0, w, y, { title, value, percentile }, p) {
   ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
   ctx.font = `600 17px ${UI}`;
   ctx.fillStyle = p.ink;
-  ctx.fillText(title, PAD, y + 17);
+  ctx.fillText(title, x0 + PAD, y + 17);
   if (value) {
     ctx.font = `500 17px ${MONO}`;
     ctx.textAlign = 'right';
-    ctx.fillText(value, W - PAD, y + 17);
+    ctx.fillText(value, x0 + w - PAD, y + 17);
+    const vw = ctx.measureText(value).width;
     ctx.textAlign = 'left';
+    if (percentile !== null && percentile !== undefined) {
+      drawGauge(ctx, x0 + w - PAD - vw - 24, y + 13, 30, percentile, p);
+    }
   }
 }
 
@@ -213,6 +251,21 @@ function drawWatermark(ctx, x, y, w, h, p, size = 20) {
   ctx.fillStyle = p.orange;
   ctx.fillText('ATLAS', wx + wl, wy);
   ctx.restore();
+}
+
+// Word-wrap `text` to `maxW` with the given font; returns the lines.
+function wrapText(text, font, maxW) {
+  if (!text) return [];
+  const m = document.createElement('canvas').getContext('2d');
+  m.font = font;
+  const lines = [];
+  let line = '';
+  for (const word of text.split(/\s+/)) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && m.measureText(next).width > maxW) { lines.push(line); line = word; } else line = next;
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 // Lay the legend out into rows up front (measured with the same font the
@@ -257,6 +310,49 @@ function drawLegend(ctx, rows, x0, y, cw, p) {
   return y;
 }
 
+// The story card's text blocks, measured for the given content width.
+const TAKEAWAY_FONT = `13px ${UI}`;
+function layoutCard({ title, takeaway, asOf }, cw) {
+  const lines = wrapText(takeaway, TAKEAWAY_FONT, cw);
+  return {
+    headerH: title ? 40 : 0,
+    takeawayLines: lines,
+    takeawayH: lines.length ? lines.length * 18 + 8 : 0,
+    footerH: asOf ? 22 : 0,
+  };
+}
+
+function drawTakeaway(ctx, lines, x, y, p) {
+  ctx.font = TAKEAWAY_FONT;
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = p.dim;
+  for (const line of lines) { ctx.fillText(line, x, y + 13); y += 18; }
+  return y + 8;
+}
+
+function drawFooter(ctx, x0, w, y, asOf, p) {
+  ctx.font = `11px ${UI}`;
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = p.faint;
+  ctx.textAlign = 'left';
+  const m = String(asOf).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  ctx.fillText(`As of ${m ? `${m[2]}/${m[3]}/${m[1]}` : asOf} UTC`, x0 + PAD, y + 14);
+  ctx.textAlign = 'right';
+  ctx.fillText('True North Atlas', x0 + w - PAD, y + 14);
+  ctx.textAlign = 'left';
+}
+
+// Frame a content block of W0 x H0 into the requested aspect: the canvas
+// grows (never shrinks) and the content is centred, so nothing is scaled.
+function frame(W0, H0, aspect) {
+  const r = ASPECT[aspect];
+  if (!r) return { W: W0, H: H0, ox: 0, oy: 0 };
+  let W = W0, H = H0;
+  if (W0 / H0 >= r) H = Math.ceil(W0 / r); else W = Math.ceil(H0 * r);
+  return { W, H, ox: Math.round((W - W0) / 2), oy: Math.round((H - H0) / 2) };
+}
+
 function toBlob(canvas) {
   return new Promise((resolve, reject) => {
     canvas.toBlob(b => (b ? resolve(b) : reject(new Error('encode failed'))), 'image/png');
@@ -265,13 +361,18 @@ function toBlob(canvas) {
 
 /**
  * Rasterize the chart inside `container` (a .chartbox element) to a PNG Blob,
- * framed with the metric title, its latest value, the legend and the watermark.
- * `legendFrom` reads the legend from another element when the key is shared
- * by several tiles and lives outside the one being copied; `watermarkSize`
- * matches the on-screen .chart-watermark of the element being copied.
+ * framed as a story card: title, percentile gauge and latest value, the
+ * takeaway sentence, the chart(s) with the watermark, the legend and an
+ * as-of footer. `legendFrom` reads the legend from another element when the
+ * key is shared by several tiles and lives outside the one being copied;
+ * `watermarkSize` matches the on-screen .chart-watermark of the element being
+ * copied; `aspect` is 'auto' | 'wide' | 'square'.
  * Rejects when no chart is on screen so the caller can fall back.
  */
-export async function chartToPngBlob(container, { title = '', value = '', scale = 2, legendFrom = null, watermarkSize = 20 } = {}) {
+export async function chartToPngBlob(container, {
+  title = '', value = '', takeaway = '', asOf = null, percentile = null,
+  scale = 2, legendFrom = null, watermarkSize = 20, aspect = 'auto',
+} = {}) {
   // Every recharts surface in the box, at its on-screen offset: a chart made
   // of stacked panes (price over rallies) copies as one plot, the gap between
   // the panes included, and the watermark centres on the whole.
@@ -286,10 +387,12 @@ export async function chartToPngBlob(container, { title = '', value = '', scale 
   const minX = Math.min(...snaps.map(s => s.x)), minY = Math.min(...snaps.map(s => s.y));
   const cw = Math.round(Math.max(...snaps.map(s => s.x + s.w)) - minX);
   const ch = Math.round(Math.max(...snaps.map(s => s.y + s.h)) - minY);
+
   const legend = layoutLegend(readLegend(legendFrom ?? container), cw);
-  const headerH = title ? 40 : 0;
-  const W = cw + PAD * 2;
-  const H = headerH + ch + legend.height + PAD * 2;
+  const card = layoutCard({ title, takeaway, asOf }, cw);
+  const W0 = cw + PAD * 2;
+  const H0 = PAD + card.headerH + card.takeawayH + ch + 14 + legend.height + card.footerH + PAD;
+  const { W, H, ox, oy } = frame(W0, H0, aspect);
 
   const canvas = document.createElement('canvas');
   canvas.width = W * scale;
@@ -300,12 +403,14 @@ export async function chartToPngBlob(container, { title = '', value = '', scale 
   const p = palette();
   paintGround(ctx, W, H, container, p);
 
-  let y = PAD;
-  if (title) { drawHeader(ctx, W, y, title, value, p); y += headerH; }
-  for (const s of snaps) ctx.drawImage(s.img, PAD + Math.round(s.x - minX), y + Math.round(s.y - minY), s.w, s.h);
-  drawWatermark(ctx, PAD, y, cw, ch, p, watermarkSize);
+  let y = oy + PAD;
+  if (title) { drawHeader(ctx, ox, W0, y, { title, value, percentile }, p); y += card.headerH; }
+  if (card.takeawayLines.length) y = drawTakeaway(ctx, card.takeawayLines, ox + PAD, y, p);
+  for (const s of snaps) ctx.drawImage(s.img, ox + PAD + Math.round(s.x - minX), y + Math.round(s.y - minY), s.w, s.h);
+  drawWatermark(ctx, ox + PAD, y, cw, ch, p, watermarkSize);
   y += ch + 14;
-  if (legend.rows.length) drawLegend(ctx, legend.rows, PAD, y, cw, p);
+  if (legend.rows.length) y = drawLegend(ctx, legend.rows, ox + PAD, y, cw, p);
+  if (asOf) drawFooter(ctx, ox, W0, y, asOf, p);
 
   return toBlob(canvas);
 }
@@ -325,11 +430,14 @@ function readCaption(tile) {
 /**
  * Rasterize every chart tile inside `container` (elements matching `.bc-tile`,
  * each holding one recharts surface and a `.bc-hd` caption) into ONE PNG that
- * reproduces the on-screen grid: tiles at their relative positions, each with
- * its own card, caption and watermark, under a shared header and the shared
- * legend found in the container. Rejects when there is nothing to copy.
+ * reproduces the on-screen layout: tiles at their relative positions, each
+ * with its own card, caption and watermark, under the story-card header and
+ * takeaway, with the shared legend and as-of footer below. Rejects when there
+ * is nothing to copy.
  */
-export async function tilesToPngBlob(container, { title = '', value = '', scale = 2 } = {}) {
+export async function tilesToPngBlob(container, {
+  title = '', value = '', takeaway = '', asOf = null, percentile = null, scale = 2, aspect = 'auto',
+} = {}) {
   const tiles = [...(container?.querySelectorAll('.bc-tile') ?? [])]
     .filter(t => t.querySelector('svg.recharts-surface'));
   if (!tiles.length) throw new Error('no chart to copy');
@@ -352,9 +460,10 @@ export async function tilesToPngBlob(container, { title = '', value = '', scale 
   const gridH = Math.ceil(Math.max(...snaps.map(s => s.y + s.h)));
 
   const legend = layoutLegend(readLegend(container), gw);
-  const headerH = title ? 40 : 0;
-  const W = gw + PAD * 2;
-  const H = headerH + gridH + legend.height + PAD * 2;
+  const card = layoutCard({ title, takeaway, asOf }, gw);
+  const W0 = gw + PAD * 2;
+  const H0 = PAD + card.headerH + card.takeawayH + gridH + 14 + legend.height + card.footerH + PAD;
+  const { W, H, ox, oy } = frame(W0, H0, aspect);
 
   const canvas = document.createElement('canvas');
   canvas.width = W * scale;
@@ -367,11 +476,12 @@ export async function tilesToPngBlob(container, { title = '', value = '', scale 
   ctx.fillStyle = p.ground;
   ctx.fillRect(0, 0, W, H);
 
-  let y = PAD;
-  if (title) { drawHeader(ctx, W, y, title, value, p); y += headerH; }
+  let y = oy + PAD;
+  if (title) { drawHeader(ctx, ox, W0, y, { title, value, percentile }, p); y += card.headerH; }
+  if (card.takeawayLines.length) y = drawTakeaway(ctx, card.takeawayLines, ox + PAD, y, p);
 
   for (const s of snaps) {
-    const tx = PAD + s.x, ty = y + s.y;
+    const tx = ox + PAD + s.x, ty = y + s.y;
     roundRect(ctx, tx, ty, s.w, s.h, 12);
     ctx.fillStyle = p.panel;
     ctx.fill();
@@ -409,13 +519,14 @@ export async function tilesToPngBlob(container, { title = '', value = '', scale 
       if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
     }
 
-    const ix = PAD + s.sx, iy = y + s.sy;
+    const ix = ox + PAD + s.sx, iy = y + s.sy;
     ctx.drawImage(s.snap.img, ix, iy, s.snap.w, s.snap.h);
     drawWatermark(ctx, ix, iy, s.snap.w, s.snap.h, p, 15);
   }
 
   y += gridH + 14;
-  if (legend.rows.length) drawLegend(ctx, legend.rows, PAD, y, gw, p);
+  if (legend.rows.length) y = drawLegend(ctx, legend.rows, ox + PAD, y, gw, p);
+  if (asOf) drawFooter(ctx, ox, W0, y, asOf, p);
 
   return toBlob(canvas);
 }

@@ -21,6 +21,7 @@ import { subscribeRouter, newslettersAdminRouter, emailLogRouter, processNewslet
 import { getCopyOverrides, metricCopyAdminRouter } from './metricCopy.js';
 import { getSpot } from './prices.js';
 import { buildBottoms, buildRallies } from './bottoms.js';
+import { buildStory } from './story.js';
 
 const log = pino({ level: process.env.LOG_LEVEL || 'info' });
 const app = express();
@@ -148,6 +149,26 @@ app.get('/api/rallies', async (_req, res) => {
        WHERE price IS NOT NULL ORDER BY day ASC`);
     cache(res);
     res.json(buildRallies(r.rows, HALVINGS));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ---- Story layer --------------------------------------------------------------
+// GET /api/story/:slug -> the facts a line metric's chart annotates and the
+// one-sentence takeaway: latest value and percentile, current zone and its
+// tenure, the reading at every cycle peak and low. See story.js.
+const PANEL_KINDS = new Set(['stacked', 'urpd', 'bottoms', 'rallies']);
+app.get('/api/story/:slug', async (req, res) => {
+  const m = bySlug[req.params.slug];
+  if (!m) return res.status(404).json({ error: 'unknown metric' });
+  if (PANEL_KINDS.has(m.kind)) return res.status(400).json({ error: 'stories are for line metrics' });
+  const col = Array.isArray(m.column) ? m.column[0] : m.column;
+  if (!IDENT_RE.test(col)) return res.status(400).json({ error: 'bad metric' });
+  try {
+    const r = await pool.query(
+      `SELECT day::text AS day, price::float AS price, ${col}::float AS v
+       FROM metrics_daily ORDER BY day ASC`);
+    cache(res);
+    res.json(buildStory(m, r.rows, HALVINGS));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
