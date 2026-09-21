@@ -2,7 +2,7 @@
 // series. Mirrors PANEL_KINDS in server/src/catalog.js (a web test checks the
 // two lists agree) so the overview, the newsletter composer and the metric
 // page can branch on one predicate.
-export const PANEL_KINDS = ['stacked', 'urpd', 'bottoms', 'rallies', 'runs', 'underwater', 'scorecard'];
+export const PANEL_KINDS = ['stacked', 'urpd', 'bottoms', 'rallies', 'runs', 'underwater', 'scorecard', 'heatmap', 'clock'];
 export const isPanelKind = (kind) => PANEL_KINDS.includes(kind);
 
 // What the overview card says in place of a latest value.
@@ -14,4 +14,6 @@ export const CARD_LABEL = {
   runs: 'Compare recoveries →',
   underwater: 'See the drawdown →',
   scorecard: 'Open the scorecard →',
+  heatmap: 'Explore the terrain →',
+  clock: 'Read the clock →',
 };

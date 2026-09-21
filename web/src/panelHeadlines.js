@@ -3,7 +3,7 @@
 // tests share one source of truth. Returns null when there is nothing to
 // show yet (the page then prints the kind's empty-state message).
 
-import { fmt, fmtDay } from './format.js';
+import { fmt, fmtDay, compact } from './format.js';
 import { fmtMultiple, fmtDrawdown } from './cycleRows.js';
 
 const pct = (v, digits = 0) => `${(v * 100).toFixed(digits)}%`;
@@ -103,10 +103,62 @@ export function scorecardHeadline(data) {
   };
 }
 
+export function heatmapHeadline(data) {
+  const l = data?.latest;
+  if (!l || !data.columns?.length) return null;
+  const top = l.clusters?.[0] ?? null;
+  const range = (c) => `${fmt(c.from, 'usd')} to ${fmt(c.to, 'usd')}`;
+  const between = (c) => `${fmt(c.from, 'usd')} and ${fmt(c.to, 'usd')}`;
+  const state = (c) => c.position;
+  const parts = [];
+  if (top) {
+    parts.push(`As of ${fmtDay(l.day)}, the densest cost-basis cluster holds ${compact(top.btc)} BTC acquired between ${between(top)}, ${state(top)} at the ${fmt(l.price, 'usd')} close.`);
+    if (l.clusters[1]) parts.push(`The next holds ${compact(l.clusters[1].btc)} BTC between ${between(l.clusters[1])}, ${state(l.clusters[1])}.`);
+  }
+  if (l.inProfit !== null && l.inProfit !== undefined) parts.push(`${pct(l.inProfit)} of supply is in profit.`);
+  return {
+    value: top ? `${compact(top.btc)} BTC` : fmt(l.price, 'usd'),
+    sub: top ? `densest cluster, acquired ${range(top)}, ${state(top)}` : `close on ${fmtDay(l.day)}`,
+    takeaway: parts.join(' '),
+    asOf: l.day,
+  };
+}
+
+export function clockHeadline(data) {
+  if (!data?.epochs?.length) return null;
+  const t = data.today;
+  const closed = data.epochs.filter(e => !e.open);
+  const peaks = closed.filter(e => e.peak).map(e => e.peak.t);
+  const lows = closed.filter(e => e.low && !e.low.provisional).map(e => e.low.t);
+  const rangeT = (xs) => (xs.length ? `${pct(Math.min(...xs))} and ${pct(Math.max(...xs))}` : null);
+  const parts = [];
+  if (t) {
+    parts.push(t.progress !== null
+      ? `Epoch ${t.epoch} is ${pct(t.progress)} complete by blocks (${t.blocksIn.toLocaleString('en-US')} of 210,000).`
+      : `Epoch ${t.epoch} is ${pct(t.t)} of the way through on the calendar.`);
+    if (t.mvrv !== null) {
+      const peers = data.atHour.filter(a => a.mvrv !== null);
+      parts.push(`MVRV reads ${t.mvrv.toFixed(2)} at this hour`
+        + (peers.length ? `; at the same hour, ${peers.length === 1 ? 'epoch' : 'epochs'} ${list(peers.map(a => `${a.epoch}`))} read ${list(peers.map(a => a.mvrv.toFixed(2)))}.` : '.'));
+    }
+  }
+  if (peaks.length >= 2 && lows.length >= 2) {
+    parts.push(`Cycle peaks have fallen between ${rangeT(peaks)} of the way through an epoch, lows between ${rangeT(lows)}.`);
+  }
+  return {
+    value: t && t.progress !== null ? pct(t.progress) : (t ? pct(t.t) : ''),
+    sub: t ? `of epoch ${t.epoch} complete${t.blocksIn !== null ? `, block ${t.blocksIn.toLocaleString('en-US')} of 210,000` : ''}` : '',
+    takeaway: parts.join(' '),
+    asOf: data.asOf ?? null,
+  };
+}
+
 export const HEADLINES = {
   bottoms: bottomsHeadline,
   rallies: ralliesHeadline,
   runs: runsHeadline,
   underwater: underwaterHeadline,
   scorecard: scorecardHeadline,
+  heatmap: heatmapHeadline,
+  clock: clockHeadline,
 };

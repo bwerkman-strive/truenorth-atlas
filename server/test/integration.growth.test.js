@@ -377,3 +377,54 @@ test('the sprint-1 kinds are panels: no cycle overlay, story, alert or spark', a
   assert.ok(cat.categories.some(c => c.id === 'cycles'));
   assert.equal(cat.metrics.find(m => m.slug === 'cycle-scorecard').kind, 'scorecard');
 });
+
+// ---------------------------------------------------------------------------
+// Sprint-2 cycle charts: the cost-basis heatmap and the cycle clock.
+test('heatmap endpoint 404s without a distribution, then serves the grid once one exists', async () => {
+  assert.equal((await fetch(base + '/api/heatmap')).status, 404);
+  // Give one Sunday and, three days later, the epoch-3 low day (a Wednesday,
+  // which then is the latest distribution day) a distribution: the route
+  // samples Sundays plus the latest day.
+  await pool.query(`UPDATE metrics_daily SET urpd = '{"top": 20000, "width": 200, "buckets": [{"p": 0, "v": 1000}, {"p": 2800, "v": 500}, {"p": 19800, "v": 50}]}'::jsonb
+                    WHERE day IN ('2018-12-23', '2018-12-26')`);
+  const { status, headers, body } = await j('/api/heatmap');
+  assert.equal(status, 200);
+  assert.match(headers.get('cache-control'), /max-age=/);
+  assert.equal(body.slug, 'cost-basis-heatmap');
+  assert.deepEqual(Object.keys(body).sort(), ['columns', 'latest', 'levels', 'maxCell', 'slug']);
+  assert.equal(body.columns.length, 2, 'the Sunday and the latest distribution day');
+  assert.deepEqual(Object.keys(body.columns[0]).sort(), ['cells', 'day', 'floor', 'price', 'width']);
+  assert.equal(body.columns[0].floor, 1000);
+  assert.equal(body.columns[0].cells.length, body.levels.length - 1);
+  assert.deepEqual(Object.keys(body.latest).sort(), ['clusters', 'day', 'floor', 'inProfit', 'price', 'width']);
+  assert.equal(body.latest.day, '2018-12-26');
+  assert.ok(body.latest.clusters.length >= 1);
+  assert.deepEqual(Object.keys(body.latest.clusters[0]).sort(), ['btc', 'from', 'position', 'to']);
+  // Memoized per finalized day: a second call is served from memory with the same shape.
+  const again = (await j('/api/heatmap')).body;
+  assert.equal(again.latest.day, body.latest.day);
+});
+
+test('clock endpoint serves each epoch as a ring with today\'s hand', async () => {
+  const { status, body } = await j('/api/clock');
+  assert.equal(status, 200);
+  assert.equal(body.slug, 'cycle-clock');
+  assert.deepEqual(Object.keys(body).sort(), ['asOf', 'atHour', 'epochs', 'slug', 'today']);
+  const e3 = body.epochs.find(e => e.epoch === 3);
+  assert.deepEqual(Object.keys(e3).sort(), ['days', 'end', 'epoch', 'low', 'open', 'peak', 'progress', 'samples', 'start']);
+  assert.equal(e3.open, false);
+  assert.equal(e3.days, 1380);
+  assert.ok(e3.peak.t > 0 && e3.peak.t < 1);
+  assert.ok(e3.samples.length === 0 || 'mvrv' in e3.samples[0], 'samples carry MVRV (null rows are skipped)');
+  const open = body.epochs.find(e => e.open);
+  assert.ok(open, 'the last seeded epoch is open');
+  assert.equal(body.today.epoch, open.epoch);
+});
+
+test('the sprint-2 kinds are panels too', async () => {
+  for (const slug of ['cost-basis-heatmap', 'cycle-clock']) {
+    assert.equal((await fetch(base + `/api/cycles/${slug}`)).status, 400, slug);
+    assert.equal((await fetch(base + `/api/story/${slug}`)).status, 400, slug);
+    assert.equal((await j('/api/latest')).body.values[slug].value, null, slug);
+  }
+});

@@ -375,20 +375,25 @@ function toBlob(canvas) {
  */
 export async function chartToPngBlob(container, {
   title = '', value = '', takeaway = '', asOf = null, percentile = null,
-  scale = 2, legendFrom = null, watermarkSize = 20, aspect = 'auto',
+  scale = 2, legendFrom = null, watermarkSize = 20, aspect = 'auto', watermarkPos = 'center',
 } = {}) {
   // Every recharts surface in the box, at its on-screen offset: a chart made
   // of stacked panes (price over rallies) copies as one plot, the gap between
   // the panes included, and the watermark centres on the whole.
-  // Recharts surfaces, plus hand-drawn SVG panels that opt in with data-export
-  // (the cycle scorecard).
-  const svgs = [...(container?.querySelectorAll('svg.recharts-surface, svg[data-export]') ?? [])];
-  if (!svgs.length) throw new Error('no chart to copy');
+  // Recharts surfaces, hand-drawn SVG panels that opt in with data-export
+  // (the cycle scorecard, the clock) and canvas layers that do the same (the
+  // heatmap's cells, which sit under an SVG overlay). Document order is
+  // paint order, so a canvas placed before its overlay ends up beneath it.
+  const layers = [...(container?.querySelectorAll('canvas[data-export], svg.recharts-surface, svg[data-export]') ?? [])];
+  if (!layers.length) throw new Error('no chart to copy');
   await fontsReady();
 
-  const snaps = await Promise.all(svgs.map(async (svg) => {
-    const r = svg.getBoundingClientRect();
-    return { x: r.left, y: r.top, ...(await snapSvg(svg, scale)) };
+  const snaps = await Promise.all(layers.map(async (el) => {
+    const r = el.getBoundingClientRect();
+    if (el.tagName.toLowerCase() === 'canvas') {
+      return { x: r.left, y: r.top, img: el, w: Math.max(1, Math.round(r.width)), h: Math.max(1, Math.round(r.height)) };
+    }
+    return { x: r.left, y: r.top, ...(await snapSvg(el, scale)) };
   }));
   const minX = Math.min(...snaps.map(s => s.x)), minY = Math.min(...snaps.map(s => s.y));
   const cw = Math.round(Math.max(...snaps.map(s => s.x + s.w)) - minX);
@@ -413,7 +418,10 @@ export async function chartToPngBlob(container, {
   if (title) { drawHeader(ctx, ox, W0, y, { title, value, percentile }, p); y += card.headerH; }
   if (card.takeawayLines.length) y = drawTakeaway(ctx, card.takeawayLines, ox + PAD, y, p);
   for (const s of snaps) ctx.drawImage(s.img, ox + PAD + Math.round(s.x - minX), y + Math.round(s.y - minY), s.w, s.h);
-  drawWatermark(ctx, ox + PAD, y, cw, ch, p, watermarkSize);
+  // Charts whose centre carries their own label (the clock) take the
+  // watermark in the lower-right corner of the plot instead.
+  if (watermarkPos === 'corner') drawWatermark(ctx, ox + PAD + cw - 230, y + ch - 44, 210, 30, p, watermarkSize);
+  else drawWatermark(ctx, ox + PAD, y, cw, ch, p, watermarkSize);
   y += ch + 14;
   if (legend.rows.length) y = drawLegend(ctx, legend.rows, ox + PAD, y, cw, p);
   if (asOf) drawFooter(ctx, ox, W0, y, asOf, p);
