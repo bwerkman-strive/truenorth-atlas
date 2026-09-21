@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import BearingDial from '../components/BearingDial.jsx';
 import { fmt } from '../api.js';
+import { isPanelKind, CARD_LABEL } from '../kinds.js';
 
 function Spark({ data }) {
   if (!data || data.filter(v => v !== null).length < 2) return <div className="spark" />;
@@ -57,19 +58,15 @@ export default function Overview({ catalog, latest, onOpen }) {
             <div className="grid">
               {g.metrics.map(m => {
                 const v = latest.values?.[m.slug];
-                // Panel-set and distribution kinds have no single latest value.
-                const special = m.kind === 'stacked' || m.kind === 'urpd' || m.kind === 'bottoms' || m.kind === 'rallies';
+                // Panel kinds have no single latest value; the card links into the chart.
+                const special = isPanelKind(m.kind);
                 return (
                   <button key={m.slug} className="card" onClick={() => onOpen(m.slug)}>
                     <div className="card-top">
                       <div>
                         <h3>{m.name}</h3>
                         <div className="val" style={m.slug === 'price' ? { color: 'var(--btc)' } : undefined}>
-                          {m.kind === 'stacked' ? 'View bands →'
-                            : m.kind === 'urpd' ? 'View distribution →'
-                            : m.kind === 'bottoms' ? 'Compare cycle lows →'
-                            : m.kind === 'rallies' ? 'View bear rallies →'
-                            : fmt(v?.value, m.format, m.unit)}
+                          {special ? CARD_LABEL[m.kind] : fmt(v?.value, m.format, m.unit)}
                         </div>
                       </div>
                       {!special && <BearingDial percentile={v?.percentile} />}

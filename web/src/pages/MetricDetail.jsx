@@ -7,8 +7,7 @@ import { api, fmt, compact, fmtDay, axisTick } from '../api.js';
 import { smaByDay } from '../sma.js';
 import { chartToPngBlob, tilesToPngBlob, copyPng } from '../chartImage.js';
 import AlertForm from '../components/AlertForm.jsx';
-import BottomsChart from '../components/BottomsChart.jsx';
-import RalliesChart from '../components/RalliesChart.jsx';
+import { PANELS } from '../panels.jsx';
 import { TOOLTIP_PROPS, EPOCH_COLORS, EPOCH_WIDTH } from '../chartTheme.js';
 import { buildMarks } from '../storyMarks.js';
 
@@ -80,8 +79,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
   const [data, setData] = useState(null);
   const [cycles, setCycles] = useState(null);
   const [urpd, setUrpd] = useState(null);
-  const [bottoms, setBottoms] = useState(null);
-  const [rallies, setRallies] = useState(null);
+  const [panelData, setPanelData] = useState(null); // payload for panel kinds (see panels.jsx)
   const [story, setStory] = useState(null);       // /api/story facts (scalar metrics)
   const [storyOn, setStoryOn] = useState(true);   // annotations on the timeline chart
   const [err, setErr] = useState(null);
@@ -96,11 +94,10 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
     ? metric.sma : null;
   const [smaOn, setSmaOn] = useState(() => new Set(smaOpts?.active ?? []));
   const [smaSrc, setSmaSrc] = useState(null);
-  // Scalar metrics get the full toolbar; 'stacked', 'urpd' and 'bottoms'
-  // kinds render their own chart form with a reduced toolbar.
-  const isBottoms = metric.kind === 'bottoms';
-  const isRallies = metric.kind === 'rallies';
-  const scalar = metric.kind !== 'stacked' && metric.kind !== 'urpd' && !isBottoms && !isRallies;
+  // Scalar metrics get the full toolbar; 'stacked', 'urpd' and the panel
+  // kinds in panels.jsx render their own chart form with a reduced toolbar.
+  const panel = PANELS[metric.kind] ?? null;
+  const scalar = metric.kind !== 'stacked' && metric.kind !== 'urpd' && !panel;
   // The overlay only exists for charts that don't already draw BTC price as
   // one of their native series (and not for the price chart itself).
   const canOverlayPrice = metric.slug !== 'price' && !(metric.columns ?? []).includes('price');
@@ -146,14 +143,9 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
       api.urpd().then(setUrpd).catch(e => setErr(e.message));
       return;
     }
-    if (isBottoms) {
-      setBottoms(null); setErr(null);
-      api.bottoms().then(setBottoms).catch(e => setErr(e.message));
-      return;
-    }
-    if (isRallies) {
-      setRallies(null); setErr(null);
-      api.rallies().then(setRallies).catch(e => setErr(e.message));
+    if (panel) {
+      setPanelData(null); setErr(null);
+      api.panel(panel.endpoint).then(setPanelData).catch(e => setErr(e.message));
       return;
     }
     if (view === 'cycles') {
@@ -219,7 +211,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
       takeaway: storyText, asOf: asOfDay,
       percentile: scalar ? story?.percentile ?? null : null,
     };
-    const png = isBottoms
+    const png = panel?.layout === 'tiles'
       ? tilesToPngBlob(chartBoxRef.current, meta)
       : chartToPngBlob(chartBoxRef.current, meta);
     const status = await copyPng(png, `${metric.slug}-true-north-atlas.png`);
@@ -318,38 +310,25 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
 
   const catName = categories.find(c => c.id === metric.category)?.name ?? '';
   // Watermark only when a chart is actually on screen, never over loading/empty states.
+  // Panel kinds: headline, sub-line, takeaway and as-of come from the kind's
+  // pure headline builder (panelHeadlines.js); null means nothing to show yet.
+  const head = panel && panelData ? panel.headline(panelData) : null;
   const hasChart = !err && (view === 'cycles'
     ? cycleRows.length > 0
     : metric.kind === 'urpd' ? !!urpd
-    : isBottoms ? (bottoms?.cycles?.length ?? 0) > 0
-    : isRallies ? (rallies?.bears?.length ?? 0) > 0
+    : panel ? !!head
     : rows.length > 0);
-  // Bottoms: the headline is the current epoch's low (provisional while the
-  // epoch is open), the last panel served.
-  const curCycle = isBottoms && bottoms?.cycles?.length ? bottoms.cycles[bottoms.cycles.length - 1] : null;
-  // Rallies: the headline is the open bear's rally off its low to date (the
-  // last bear served, when it is still ongoing).
-  const lastBear = isRallies && rallies?.bears?.length ? rallies.bears[rallies.bears.length - 1] : null;
-  const curBear = lastBear?.ongoing && lastBear.current !== null ? lastBear : null;
-  const pctSigned = (v) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%`;
   // Headline figure for the exported image, mirroring the .bigval on screen.
   const headlineValue = scalar
     ? fmt(unitOpts ? scaleVal(latestVal) : latestVal, metric.format, displayUnit)
     : metric.kind === 'urpd' && urpd?.avg != null ? fmt(urpd.avg, 'usd')
-    : curCycle ? fmt(curCycle.bottom.price, 'usd')
-    : curBear ? pctSigned(curBear.current) : '';
+    : head ? head.value : '';
   // One sentence for the export (and, for scalar metrics, the page): the
-  // story layer's templated takeaway, or the panel kinds' own facts.
-  const storyText = scalar ? (story?.takeaway ?? '')
-    : curCycle ? `Epoch ${curCycle.epoch} ${curCycle.provisional ? 'low to date' : 'low'} ${fmt(curCycle.bottom.price, 'usd')} on ${fmtDay(curCycle.bottom.day)}, `
-        + `${Math.round(curCycle.drawdown * 100)}% below the ${fmtDay(curCycle.peak.day)} peak${curCycle.provisional ? ' (provisional)' : ''}.`
-    : curBear ? `Epoch ${curBear.epoch} rally ${pctSigned(curBear.current)} off the ${fmtDay(curBear.low.day)} low, day ${curBear.days} of the bear. `
-        + `Largest rallies of the prior bears: ${rallies.bears.filter(b => !b.ongoing).map(b => `+${Math.round(b.maxRally.value * 100)}%`).join(', ')}.`
-    : '';
+  // story layer's templated takeaway, or the panel kind's own facts.
+  const storyText = scalar ? (story?.takeaway ?? '') : (head?.takeaway ?? '');
   const asOfDay = scalar ? story?.asOf ?? data?.rows?.[data.rows.length - 1]?.day ?? null
     : metric.kind === 'urpd' ? urpd?.day ?? null
-    : curCycle ? curCycle.values[curCycle.values.length - 1]?.day ?? null
-    : lastBear ? lastBear.through : null;
+    : head?.asOf ?? null;
   // Chart annotations from the story facts, snapped onto the drawn rows.
   const storyMarks = useMemo(() => {
     if (!storyOn || !scalar || view !== 'series' || !story || !rows.length || metric.projection) return [];
@@ -394,23 +373,12 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             {fmt(urpd.avg, 'usd')}<span className="bigval-sub">average cost basis</span>
           </div>
         )}
-        {curCycle && (
+        {head?.value && (
           <div className="bigval">
-            {fmt(curCycle.bottom.price, 'usd')}
-            <span className="bigval-sub">
-              epoch {curCycle.epoch} {curCycle.provisional ? 'low to date' : 'low'}, {fmtDay(curCycle.bottom.day)}
-              {curCycle.provisional ? ' (provisional)' : ''}
-            </span>
+            {head.value}<span className="bigval-sub">{head.sub}</span>
           </div>
         )}
-        {curBear && (
-          <div className="bigval">
-            {pctSigned(curBear.current)}
-            <span className="bigval-sub">
-              epoch {curBear.epoch} rally off the {fmtDay(curBear.low.day)} low, day {curBear.days} of the bear
-            </span>
-          </div>
-        )}
+        {panel && head?.takeaway && <p className="takeaway">{head.takeaway}</p>}
       </div>
 
       <div className="toolbar">
@@ -420,12 +388,12 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             <button className={view === 'cycles' ? 'on' : ''} onClick={() => setView('cycles')}>Cycles</button>
           </div>
         )}
-        {view === 'series' && metric.kind !== 'urpd' && !isBottoms && !isRallies && <div className="grp" role="group" aria-label="Time range">
+        {view === 'series' && metric.kind !== 'urpd' && !panel && <div className="grp" role="group" aria-label="Time range">
           {RANGES.map(r => (
             <button key={r.id} className={range === r.id ? 'on' : ''} onClick={() => setRange(r.id)}>{r.label}</button>
           ))}
         </div>}
-        {(scalar || isBottoms || isRallies) && (
+        {(scalar || panel?.scale) && (
           <div className="grp" role="group" aria-label="Scale">
             <button className={!logScale ? 'on' : ''} onClick={() => setLogScale(false)}>Linear</button>
             <button className={logScale ? 'on' : ''} onClick={() => setLogScale(true)}>Log</button>
@@ -494,19 +462,15 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
         </div>
       </div>
 
-      {isBottoms && (
+      {panel?.layout === 'tiles' && (
         <div className="bc-group" ref={chartBoxRef}>
           {err && <div className="err">Could not load series: {err}</div>}
-          {!err && !bottoms && <div className="loading">Aligning cycle lows…</div>}
-          {!err && bottoms && bottoms.cycles.length === 0 && (
-            <div className="loading">No completed bear market in the finalized history yet.</div>
-          )}
-          {!err && bottoms && bottoms.cycles.length > 0 && (
-            <BottomsChart data={bottoms} logScale={logScale} metricName={metric.name} />
-          )}
+          {!err && !panelData && <div className="loading">{panel.loading}</div>}
+          {!err && panelData && !head && <div className="loading">{panel.empty}</div>}
+          {!err && head && <panel.Chart data={panelData} logScale={logScale} metricName={metric.name} />}
         </div>
       )}
-      {!isBottoms && <div className="chartbox" ref={chartBoxRef}>
+      {panel?.layout !== 'tiles' && <div className="chartbox" ref={chartBoxRef}>
         {hasChart && (
           <div className="chart-watermark" aria-hidden="true">
             TRUE NORTH <em>ATLAS</em>
@@ -574,14 +538,10 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
             </div>
           </>
         )}
-        {isRallies && !err && !rallies && <div className="loading">Measuring bear-market rallies…</div>}
-        {isRallies && !err && rallies && rallies.bears.length === 0 && (
-          <div className="loading">No completed bear market in the finalized history yet.</div>
-        )}
-        {isRallies && !err && rallies && rallies.bears.length > 0 && (
-          <RalliesChart data={rallies} logScale={logScale} />
-        )}
-        {view === 'series' && metric.kind !== 'urpd' && !isRallies && !err && !data && <div className="loading">Loading series…</div>}
+        {panel && !err && !panelData && <div className="loading">{panel.loading}</div>}
+        {panel && !err && panelData && !head && <div className="loading">{panel.empty}</div>}
+        {panel && !err && head && <panel.Chart data={panelData} logScale={logScale} metricName={metric.name} />}
+        {view === 'series' && metric.kind !== 'urpd' && !panel && !err && !data && <div className="loading">Loading series…</div>}
         {view === 'series' && !err && data && rows.length === 0 && (
           <div className="loading">No finalized data for this range yet. The sync worker is still building history.</div>
         )}

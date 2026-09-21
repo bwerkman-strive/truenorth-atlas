@@ -313,3 +313,67 @@ test('story endpoint guards its inputs', async () => {
   assert.equal((await fetch(base + '/api/story/bear-rallies')).status, 400);
   assert.equal((await fetch(base + '/api/story/cost-basis-distribution')).status, 400);
 });
+
+// ---------------------------------------------------------------------------
+// Sprint-1 cycle charts share the detector: runs, underwater, scorecard.
+test('runs endpoint serves each recovery as a multiple of its low', async () => {
+  const { status, body } = await j('/api/runs');
+  assert.equal(status, 200);
+  assert.equal(body.slug, 'bull-run-comparison');
+  assert.deepEqual(Object.keys(body).sort(), ['runs', 'slug', 'today']);
+  const r = body.runs.find(x => x.epoch === 3);
+  assert.ok(r, 'the run out of the seeded epoch-3 low');
+  assert.deepEqual(Object.keys(r).sort(),
+    ['current', 'days', 'epoch', 'low', 'multiple', 'ongoing', 'peak', 'provisional', 'through', 'values']);
+  assert.equal(r.low.day, '2018-12-26');
+  assert.equal(r.low.price, 3000);
+  assert.equal(r.ongoing, true, 'no later cycle has peaked, so the run is still open');
+  assert.equal(r.values[0].d, 0);
+  assert.equal(r.values[0].m, 1);
+  assert.deepEqual(Object.keys(r.values[0]).sort(), ['d', 'day', 'm']);
+  assert.equal(body.today.epoch, 3);
+});
+
+test('underwater endpoint serves the drawdown series, bears, current position and shares', async () => {
+  const { status, body } = await j('/api/underwater');
+  assert.equal(status, 200);
+  assert.equal(body.slug, 'drawdown-from-ath');
+  assert.deepEqual(Object.keys(body).sort(), ['bears', 'current', 'excluded', 'series', 'share', 'slug']);
+  assert.deepEqual(Object.keys(body.series[0]).sort(), ['day', 'dd']);
+  assert.equal(body.series[0].dd, 0, 'the first close is its own high');
+  const b = body.bears.find(x => x.epoch === 3);
+  assert.deepEqual(Object.keys(b).sort(), ['bearDays', 'depth', 'epoch', 'low', 'ongoing', 'peak', 'recovery']);
+  assert.equal(b.depth, -0.85);
+  assert.equal(b.bearDays, 300);
+  assert.equal(b.recovery.day, '2024-04-19', 'the epoch-5 seed at 64,000 is the first close back above 20,000');
+  assert.equal(body.current.ath.price, 66900);
+  assert.deepEqual(Object.keys(body.share).sort(), ['below30', 'below50', 'below80', 'days']);
+});
+
+test('scorecard endpoint serves one row of cycle facts per epoch', async () => {
+  const { status, body } = await j('/api/scorecard');
+  assert.equal(status, 200);
+  assert.equal(body.slug, 'cycle-scorecard');
+  assert.deepEqual(Object.keys(body).sort(), ['asOf', 'cycles', 'slug']);
+  const c = body.cycles.find(x => x.epoch === 3);
+  assert.deepEqual(Object.keys(c).sort(),
+    ['bearDays', 'bearRally', 'drawdown', 'epoch', 'halvingToPeak', 'low', 'mvrvLow', 'mvrvPeak', 'peak', 'profitAtLow', 'provisional', 'run']);
+  assert.equal(c.drawdown, 0.85);
+  assert.equal(c.bearRally, 0, 'the seeded bear falls in a straight line');
+  assert.equal(c.mvrvPeak, null, 'the seed carries no mvrv on the peak day');
+  assert.equal(c.halvingToPeak, 600);
+  assert.equal(c.run.ongoing, true);
+});
+
+test('the sprint-1 kinds are panels: no cycle overlay, story, alert or spark', async () => {
+  for (const slug of ['bull-run-comparison', 'drawdown-from-ath', 'cycle-scorecard']) {
+    assert.equal((await fetch(base + `/api/cycles/${slug}`)).status, 400, slug);
+    assert.equal((await fetch(base + `/api/story/${slug}`)).status, 400, slug);
+    const latest = (await j('/api/latest')).body.values[slug];
+    assert.equal(latest.value, null, slug);
+    assert.equal(latest.spark, undefined, slug);
+  }
+  const cat = (await j('/api/catalog')).body;
+  assert.ok(cat.categories.some(c => c.id === 'cycles'));
+  assert.equal(cat.metrics.find(m => m.slug === 'cycle-scorecard').kind, 'scorecard');
+});

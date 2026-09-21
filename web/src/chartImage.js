@@ -9,10 +9,10 @@
 //      stylesheet, so every var() would resolve to nothing. Computed values
 //      are copied onto each node first.
 //   2. Fonts are self-hosted woff2 and equally unavailable in that context.
-//      SVG text inherits `body { font-family: var(--font-body) }`, which
-//      resolves to IBM Plex *Sans* (--font-body -> --font-ui), so that is the
-//      face embedded as base64. Canvas-drawn text does not need this: it runs
-//      in the page context where the fonts are already loaded.
+//      SVG text inherits the page faces (Inter for labels, JetBrains Mono for
+//      figures), so both variable fonts are embedded as base64. Canvas-drawn
+//      text does not need this: it runs in the page context where the fonts
+//      are already loaded.
 //   3. The legend (.cycle-key) and the watermark are HTML siblings of the
 //      chart, not part of the SVG. Dropping them would make a multi-series
 //      chart unreadable and a URPD chart meaningless, since its colour key is
@@ -42,10 +42,13 @@ const STYLE_PROPS = [
   'text-anchor', 'dominant-baseline', 'shape-rendering',
 ];
 
-// --font-body -> --font-ui -> 'IBM Plex Sans'. This is what chart tick labels
-// inherit, so it is the only face the embedded SVG needs.
-const FONT_URL = '/fonts/ibm-plex-sans-400-normal.woff2';
-const FONT_FAMILY = 'IBM Plex Sans';
+// The two self-hosted variable faces (web/src/fonts.css): Inter for tick
+// labels and captions, JetBrains Mono for figures. Both are embedded so the
+// SVG rasterizes in the page's own type.
+const FONTS = [
+  { family: 'Inter', url: '/fonts/inter-latin-wght-normal.woff2' },
+  { family: 'JetBrains Mono', url: '/fonts/jetbrains-mono-latin-wght-normal.woff2' },
+];
 
 const UI = 'Inter, system-ui, sans-serif';
 const MONO = '"JetBrains Mono", ui-monospace, monospace';
@@ -67,11 +70,12 @@ function toBase64(buf) {
 
 function fontCss() {
   if (!fontCssPromise) {
-    fontCssPromise = fetch(FONT_URL)
+    fontCssPromise = Promise.all(FONTS.map(f => fetch(f.url)
       .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('font'))))
-      .then(buf => `@font-face{font-family:'${FONT_FAMILY}';font-style:normal;`
-        + `font-weight:400;src:url(data:font/woff2;base64,${toBase64(buf)}) format('woff2');}`)
-      .catch(() => ''); // a fallback face beats failing the copy outright
+      .then(buf => `@font-face{font-family:'${f.family}';font-style:normal;font-weight:100 900;`
+        + `src:url(data:font/woff2;base64,${toBase64(buf)}) format('woff2-variations');}`)
+      .catch(() => ''))) // a fallback face beats failing the copy outright
+      .then(parts => parts.join(''));
   }
   return fontCssPromise;
 }
@@ -376,7 +380,9 @@ export async function chartToPngBlob(container, {
   // Every recharts surface in the box, at its on-screen offset: a chart made
   // of stacked panes (price over rallies) copies as one plot, the gap between
   // the panes included, and the watermark centres on the whole.
-  const svgs = [...(container?.querySelectorAll('svg.recharts-surface') ?? [])];
+  // Recharts surfaces, plus hand-drawn SVG panels that opt in with data-export
+  // (the cycle scorecard).
+  const svgs = [...(container?.querySelectorAll('svg.recharts-surface, svg[data-export]') ?? [])];
   if (!svgs.length) throw new Error('no chart to copy');
   await fontsReady();
 

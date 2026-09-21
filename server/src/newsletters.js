@@ -21,7 +21,7 @@
 import crypto from 'node:crypto';
 import express from 'express';
 import { pool } from './db.js';
-import { bySlug } from './catalog.js';
+import { bySlug, isPanel } from './catalog.js';
 import { config } from './config.js';
 import { sendEmail, renderEmail, mdLite, chartBlock, EMAIL_COLORS } from './email.js';
 import { adminAuth } from './keys.js';
@@ -107,7 +107,7 @@ function validateCharts(charts) {
   if (charts.length > 8) return 'at most 8 charts per newsletter';
   for (const s of charts) {
     const m = bySlug[s];
-    if (!m || m.kind === 'stacked' || m.kind === 'bottoms' || m.kind === 'rallies') return `unknown or unsupported chart: ${s}`;
+    if (!m || isPanel(m)) return `unknown or unsupported chart: ${s}`;
   }
   return null;
 }

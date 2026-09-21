@@ -43,6 +43,8 @@ export const api = {
   bottoms: () => get('/api/bottoms'),
   rallies: () => get('/api/rallies'),
   story: (slug) => get(`/api/story/${slug}`),
+  // Panel kinds (bottoms, rallies, runs, underwater, scorecard) each have one endpoint.
+  panel: (endpoint) => get(`/api/${endpoint}`),
   urpd: (day) => get('/api/urpd' + (day ? `?day=${day}` : '')),
   spot: () => get('/api/spot'),
   createAlert: (body) => fetch(BASE + '/api/alerts', {

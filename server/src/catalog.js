@@ -7,6 +7,7 @@
 
 export const CATEGORIES = [
   { id: 'valuation', name: 'Valuation', blurb: 'Where price sits relative to on-chain cost basis.' },
+  { id: 'cycles', name: 'Market Cycles', blurb: 'Peaks, lows, bear markets and recoveries, cycle by cycle.' },
   { id: 'profitloss', name: 'Profit & Loss', blurb: 'Unrealized and realized investor P&L, straight from the UTXO set.' },
   { id: 'behavior', name: 'Spending & Lifespan', blurb: 'What old and young coins are doing: conviction, distribution, dormancy.' },
   { id: 'cohorts', name: 'Holder Cohorts', blurb: 'Short-term vs long-term holders, and the address-level distribution of supply.' },
@@ -579,7 +580,7 @@ export const METRICS = [
   },
   {
     slug: 'bottom-comparison', column: 'price', columns: ['price', 'sth_cost_basis'],
-    name: 'Bear Market Bottoms', category: 'valuation',
+    name: 'Bear Market Bottoms', category: 'cycles',
     format: 'usd', kind: 'bottoms', logDefault: true,
     short: 'Every cycle low side by side: price, the 200-day average, and short-term holder cost basis, aligned on day zero.',
     explain: 'One panel per halving epoch, each centered on the day the bear market bottomed, so the shape of every capitulation and recovery can be compared directly. The 200-day simple moving average is the trend; the short-term holder cost basis is what the market\'s most recent buyers paid. Bottoms have formed while the average sat far above that cost basis (the shaded gap), and recoveries have been confirmed when price reclaimed both. The current epoch\'s panel is provisional: its low is the lowest close so far and moves if price sets a new one.',
@@ -587,12 +588,41 @@ export const METRICS = [
   },
   {
     slug: 'bear-rallies', column: 'price', columns: ['price'],
-    name: 'Bear Market Rallies', category: 'valuation',
+    name: 'Bear Market Rallies', category: 'cycles',
     format: 'usd', kind: 'rallies', logDefault: true,
     short: 'How far price has bounced inside each bear market, from every cycle peak to its low, with the biggest rally of each labeled.',
     explain: 'Bear markets are not straight lines down: each has had at least one rally strong enough to look like a new bull. This chart shades every bear from the cycle peak to its low, colors the price path inside it, and measures each day\'s bounce from the lowest close the bear had made so far. The label on each band is how long the bear lasted and its largest such rally, so the current bounce can be judged against the ones that failed. The current epoch\'s band runs from its peak to today and stays open until the epoch closes at the next halving; its rally reads from the low to date.',
     method: 'Bears are the peak-to-low legs found for the Bear Market Bottoms chart: the deepest drawdown of each halving epoch on a centered 15-day median of closes, with the peak the highest close before the low. Inside a bear, each day\'s rally is the close divided by the lowest close since the peak, minus one. Closes inside flagged data-quality windows (currently the Feb 2014 stretch of the historical backfill, which reflects Mt. Gox prices) are excluded from the running low and drawn as a gap. Epochs whose deepest drawdown is under 40% are omitted.',
   },
+  {
+    slug: 'bull-run-comparison', column: 'price', columns: ['price'],
+    name: 'Bull Run Comparison', category: 'cycles',
+    format: 'usd', kind: 'runs', logDefault: true,
+    short: 'Every recovery from a cycle low as a multiple of that low, aligned on day zero, with today\'s run in front.',
+    explain: 'Each line is the climb out of a cycle low, from the day of the low to the next cycle\'s peak, priced as a multiple of the low so cycles of very different size share one axis. The current recovery is drawn in front, and a marker shows where every earlier run stood on the same day, so the question "is this recovery ahead or behind?" has a one-glance answer. The run out of the open epoch\'s low is provisional: a new lower low would restart it.',
+    method: 'Cycle lows and peaks come from the shared detector (the deepest drawdown of each halving epoch on a centered 15-day median of closes; the peak is the highest close before the low). A run is the daily close divided by the low, from the low to the next epoch\'s peak, or to the latest day for the open run. Day zero is the low. Log axis.',
+  },
+  {
+    slug: 'drawdown-from-ath', column: 'price', columns: ['price'],
+    name: 'Drawdown from High', category: 'cycles',
+    format: 'percent', kind: 'underwater', logDefault: false,
+    short: 'How far below its all-time high Bitcoin has traded on every day since 2010, with each bear\'s depth and length.',
+    explain: 'The underwater chart. Zero is a new all-time high; everything below it is distance from that high. Long stretches deep under the line are bear markets, and the climb back to zero is a recovery. Each bear is labeled with how far it fell and how long the fall took, and the current position shows how much of the way back remains. The share of all days spent more than 30%, 50% and 80% below the high puts today against the whole record.',
+    method: 'Daily close divided by the highest close to date, minus one. Bears are the peak-to-low legs from the shared cycle detector; recovery is the first close at or above the prior peak. Closes inside flagged data-quality windows (the Feb 2014 Mt. Gox stretch of the historical backfill) are left as gaps.',
+  },
+  {
+    slug: 'cycle-scorecard', column: 'price', columns: ['price'],
+    name: 'Cycle Scorecard', category: 'cycles',
+    format: 'usd', kind: 'scorecard',
+    short: 'Every cycle\'s peak, low, drawdown, bear length, biggest rally, MVRV at the turns and the run that followed, side by side.',
+    explain: 'The cheat sheet. One row per halving epoch with the facts that define its cycle: when and how high it peaked, when and how low it fell, how deep and how long the bear ran, the biggest rally inside it, what MVRV read at the top and at the bottom, what share of supply was in profit at the low, how many days after the halving the peak arrived, and how far the recovery out of the low has gone. The current epoch\'s row is provisional and updates every day.',
+    method: 'Every figure derives from the shared cycle detector and the finalized daily metrics. MVRV and supply in profit are read on the peak and low days. The open epoch\'s bear length runs to the latest day. The run multiple is the next cycle\'s peak divided by the low, or the latest close for the open run.',
+  },
 ];
+
+// Kinds that render their own chart form instead of a scalar time series:
+// no latest value, percentile, sparkline, alert, cycle overlay or story.
+export const PANEL_KINDS = ['stacked', 'urpd', 'bottoms', 'rallies', 'runs', 'underwater', 'scorecard'];
+export const isPanel = (m) => PANEL_KINDS.includes(m?.kind);
 
 export const bySlug = Object.fromEntries(METRICS.map(m => [m.slug, m]));

@@ -1,5 +1,6 @@
 // Newsletter workflow for admins: draft -> attach charts -> test -> schedule.
 import { useEffect, useState } from 'react';
+import { isPanelKind } from '../kinds.js';
 import { api } from '../api.js';
 
 const when = (t) => {
@@ -19,7 +20,7 @@ export default function NewsletterTab({ token, catalog }) {
   const [testEmail, setTestEmail] = useState('');
   const [sendAt, setSendAt] = useState('');
 
-  const lineMetrics = (catalog?.metrics ?? []).filter(m => m.kind !== 'stacked' && m.kind !== 'bottoms' && m.kind !== 'rallies');
+  const lineMetrics = (catalog?.metrics ?? []).filter(m => !isPanelKind(m.kind));
 
   const refresh = async () => {
     try {
