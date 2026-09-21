@@ -46,5 +46,38 @@ export function logTicks(maxMultiple) {
   return ticks;
 }
 
+// Vertical offsets for labels whose x positions crowd each other: marks
+// closer than `near` (in x units) to the previous one step down a row,
+// cycling through `rows` levels, so neighbours never overprint.
+export function staggerLabels(xs, near, step = 16, rows = 3) {
+  const order = xs.map((x, i) => [x, i]).sort((a, b) => a[0] - b[0]);
+  const out = new Array(xs.length).fill(0);
+  let level = 0, prev = null;
+  for (const [x, i] of order) {
+    level = prev !== null && x - prev < near ? (level + 1) % rows : 0;
+    out[i] = level * step;
+    prev = x;
+  }
+  return out;
+}
+
 // "-34.9%" for a drawdown (always at most zero), "0.0%" at a new high.
 export const fmtDrawdown = (dd, digits = 1) => `${(dd * 100).toFixed(digits)}%`;
+
+// Lay out labels in pixel space: each label keeps its x and drops by `step`
+// until it no longer overlaps an already-placed label (within `width` px
+// horizontally and `step` px vertically). Returns new objects; input order
+// is preserved, so put the labels you care most about first.
+export function layoutLabels(pts, { width = 100, step = 16, rows = 4 } = {}) {
+  const placed = [];
+  for (const p of pts) {
+    let y = p.y;
+    for (let r = 0; r < rows; r++) {
+      const clash = placed.some(q => Math.abs(q.x - p.x) < width && Math.abs(q.y - y) < step);
+      if (!clash) break;
+      y += step;
+    }
+    placed.push({ ...p, y });
+  }
+  return placed;
+}

@@ -4,7 +4,7 @@ import {
   XAxis, YAxis, Tooltip, ReferenceArea, CartesianGrid,
 } from 'recharts';
 import { fmt, fmtDay, compact } from '../api.js';
-import { TOOLTIP_PROPS, AXIS_TICK, EPOCH_COLORS } from '../chartTheme.js';
+import { TOOLTIP_PROPS, AXIS_TICK, EPOCH_COLORS, LABEL } from '../chartTheme.js';
 import { buildRows, segKey, rallyKey, bearLabel, bearYears, yearTicks } from '../ralliesRows.js';
 
 // The full-history price is context; the colored bear segments carry the
@@ -25,7 +25,7 @@ const bandLabel = (text, anchorEnd) => ({ viewBox }) => {
   const { x, y, width } = viewBox;
   return (
     <text x={anchorEnd ? x + width : x + width / 2} y={y - 8} textAnchor={anchorEnd ? 'end' : 'middle'}
-      fill="var(--text-dim)" fontSize={11}>{text}</text>
+      fill={LABEL.fill} fontSize={LABEL.fontSize} stroke={LABEL.stroke} strokeWidth={LABEL.strokeWidth} paintOrder="stroke">{text}</text>
   );
 };
 

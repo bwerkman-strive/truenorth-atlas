@@ -428,8 +428,9 @@ button { font-family: inherit; }
 /* Clock: a square dial that scales with the wrapper */
 .chartwrap.clock { height: 600px; display: flex; justify-content: center; }
 .chartwrap.clock svg { height: 100%; width: auto; max-width: 100%; display: block; }
-/* The dial's centre carries its own label, so the watermark steps aside */
-.chartbox:has(.chartwrap.clock) .chart-watermark { top: auto; left: auto; right: 22px; bottom: 26px; transform: none; }
+/* Panels whose centre carries their own content (the clock's dial, the
+   day counters) take the watermark in the lower-right corner instead */
+.chartbox.wm-corner .chart-watermark { top: auto; left: auto; right: 22px; bottom: 26px; transform: none; }
 .clock-scale { display: inline-flex; align-items: center; gap: 6px; }
 .clock-scale i { display: inline-block; width: 72px; height: 8px; border-radius: 2px;
   background: linear-gradient(90deg, #60A5FA, #9CA3AF 45%, #FBBF24 75%, #F87171); }

@@ -8,7 +8,7 @@ import { smaByDay } from '../sma.js';
 import { chartToPngBlob, tilesToPngBlob, copyPng } from '../chartImage.js';
 import AlertForm from '../components/AlertForm.jsx';
 import { PANELS } from '../panels.jsx';
-import { TOOLTIP_PROPS, EPOCH_COLORS, EPOCH_WIDTH } from '../chartTheme.js';
+import { TOOLTIP_PROPS, EPOCH_COLORS, EPOCH_WIDTH, LABEL, LABEL_STRONG } from '../chartTheme.js';
 import { buildMarks } from '../storyMarks.js';
 
 const RANGES = [
@@ -65,9 +65,9 @@ function toneColor(t, a = 0.10) {
 // says which; below would collide with the axis), the current-value callout
 // runs leftwards from the last point.
 const MARK_LABEL = {
-  peak: { position: 'top', fill: 'var(--text-dim)', fontSize: 10 },
-  low: { position: 'top', fill: 'var(--text-dim)', fontSize: 10 },
-  now: { position: 'left', fill: 'var(--text)', fontSize: 11, fontWeight: 600 },
+  peak: { position: 'top', ...LABEL },
+  low: { position: 'top', ...LABEL },
+  now: { position: 'left', ...LABEL_STRONG },
 };
 
 export default function MetricDetail({ metric, latestVal, onBack, categories, features }) {
@@ -471,7 +471,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
           {!err && head && <panel.Chart data={panelData} logScale={logScale} metricName={metric.name} />}
         </div>
       )}
-      {panel?.layout !== 'tiles' && <div className="chartbox" ref={chartBoxRef}>
+      {panel?.layout !== 'tiles' && <div className={'chartbox' + (panel?.watermark === 'corner' ? ' wm-corner' : '')} ref={chartBoxRef}>
         {hasChart && (
           <div className="chart-watermark" aria-hidden="true">
             TRUE NORTH <em>ATLAS</em>
@@ -591,8 +591,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                 : <ReferenceArea key={i} yAxisId="m" y1={z.from * unitFactor} y2={z.to * unitFactor} stroke="none"
                     fill={toneColor(z.tone, liveZoneLabel === z.label ? 0.26 : 0.10)}
                     label={liveZoneLabel === z.label && story?.streak ? {
-                      value: `${z.label} · ${story.streak.days}d`, position: 'insideTopRight',
-                      fill: 'var(--text-dim)', fontSize: 10,
+                      value: `${z.label} · ${story.streak.days}d`, position: 'insideTopRight', ...LABEL,
                     } : undefined} />)}
               {storyMarks.map(mk => (
                 <ReferenceDot key={mk.key} yAxisId="m" x={mk.x} y={mk.y} r={mk.kind === 'now' ? 4 : 3}
@@ -604,8 +603,7 @@ export default function MetricDetail({ metric, latestVal, onBack, categories, fe
                 <ReferenceLine key={h.height} yAxisId="m" x={h.x} stroke="var(--text-faint)" strokeDasharray="3 5"
                   strokeOpacity={h.label ? 1 : 0.45}
                   label={h.label ? {
-                    value: h.label, position: 'insideTopLeft',
-                    fill: 'var(--text-faint)', fontSize: 10, dy: i % 2 ? 14 : 2,
+                    value: h.label, position: 'insideTopLeft', ...LABEL, dy: i % 2 ? 16 : 2,
                   } : undefined} />
               ))}
               <Tooltip {...TOOLTIP_PROPS}

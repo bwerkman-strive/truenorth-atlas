@@ -4,7 +4,7 @@ import {
   XAxis, YAxis, Tooltip, ReferenceLine, ReferenceDot, CartesianGrid,
 } from 'recharts';
 import { fmtDay } from '../api.js';
-import { TOOLTIP_PROPS, AXIS_TICK, EPOCH_COLORS } from '../chartTheme.js';
+import { TOOLTIP_PROPS, AXIS_TICK, EPOCH_COLORS, LABEL, LABEL_STRONG } from '../chartTheme.js';
 import { runRows, runKey, fmtMultiple, fmtTick, logTicks, dayTicks } from '../cycleRows.js';
 
 const color = (epoch) => EPOCH_COLORS[epoch] ?? 'var(--cold)';
@@ -24,7 +24,7 @@ export default function RunsChart({ data, logScale }) {
     <>
       <div className="chartwrap">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={rows} margin={{ top: 26, right: 84, left: 0, bottom: 0 }}>
+          <ComposedChart data={rows} margin={{ top: 28, right: 100, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="run-fill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={liveColor} stopOpacity={0.32} />
@@ -60,18 +60,18 @@ export default function RunsChart({ data, logScale }) {
             {data.runs.filter(r => !r.ongoing).map(r => (
               <ReferenceDot key={`end-${r.epoch}`} x={r.days} y={r.multiple} r={3}
                 fill={color(r.epoch)} stroke="var(--deep-black)" strokeWidth={1}
-                label={{ value: `${fmtMultiple(r.multiple)} · ${r.days}d`, position: 'right', fill: 'var(--text-dim)', fontSize: 10 }} />
+                label={{ value: `${fmtMultiple(r.multiple)} · ${r.days}d`, position: 'right', ...LABEL }} />
             ))}
             {t && (
               <ReferenceLine x={t.d} stroke="var(--text-faint)" strokeDasharray="3 5"
-                label={{ value: `today · day ${t.d}`, position: 'top', fill: 'var(--text-dim)', fontSize: 10 }} />
+                label={{ value: `today · day ${t.d}`, position: 'top', ...LABEL }} />
             )}
             {t && t.atDay.filter(a => a.m !== null).map(a => (
               <ReferenceDot key={`at-${a.epoch}`} x={t.d} y={a.m} r={3} fill={color(a.epoch)} stroke="var(--deep-black)" strokeWidth={1} />
             ))}
             {t && (
               <ReferenceDot x={t.d} y={t.m} r={5} fill={liveColor} stroke="var(--deep-black)" strokeWidth={1.5} isFront
-                label={{ value: fmtMultiple(t.m), position: 'left', fill: 'var(--text)', fontSize: 11, fontWeight: 600 }} />
+                label={{ value: fmtMultiple(t.m), position: 'left', ...LABEL_STRONG }} />
             )}
           </ComposedChart>
         </ResponsiveContainer>

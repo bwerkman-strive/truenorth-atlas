@@ -428,3 +428,39 @@ test('the sprint-2 kinds are panels too', async () => {
     assert.equal((await j('/api/latest')).body.values[slug].value, null, slug);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Sprint-3 story panels: seven small builders over the same daily rows.
+test('sprint-3 panel endpoints serve their shapes on the seeded history', async () => {
+  const shapes = {
+    '/api/pnl': ['bear', 'latest', 'series', 'slug', 'topLoss', 'topProfit'],
+    '/api/handoff': ['current', 'marks', 'series', 'slug'],
+    '/api/miners': ['current', 'episodes', 'series', 'slug', 'stats'],
+    '/api/dipbuyers': ['bands', 'current', 'priors', 'slug'],
+    '/api/returns': ['current', 'monthStats', 'slug', 'years'],
+    '/api/samehour': ['horizons', 'rows', 'slug', 'today'],
+    '/api/dayssince': ['asOf', 'items', 'slug'],
+  };
+  for (const [path, keys] of Object.entries(shapes)) {
+    const { status, headers, body } = await j(path);
+    assert.equal(status, 200, path);
+    assert.match(headers.get('cache-control'), /max-age=/, path);
+    assert.deepEqual(Object.keys(body).sort(), keys, path);
+  }
+  const returns = (await j('/api/returns')).body;
+  assert.ok(returns.years.some(y => y.year === 2018));
+  assert.equal(returns.current.provisional, true);
+  const days = (await j('/api/dayssince')).body;
+  assert.ok(days.items.some(i => i.key === 'ath' && i.days >= 0));
+  const hour = (await j('/api/samehour')).body;
+  assert.equal(hour.today.epoch, 5);
+  assert.deepEqual(hour.horizons, [90, 180, 365]);
+});
+
+test('the sprint-3 kinds are panels too', async () => {
+  for (const slug of ['realized-pnl-mirror', 'holder-handoff', 'miner-stress', 'who-bought-the-dip', 'monthly-returns', 'same-hour', 'days-since']) {
+    assert.equal((await fetch(base + `/api/cycles/${slug}`)).status, 400, slug);
+    assert.equal((await fetch(base + `/api/story/${slug}`)).status, 400, slug);
+    assert.equal((await j('/api/latest')).body.values[slug].value, null, slug);
+  }
+});
