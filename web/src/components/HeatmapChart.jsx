@@ -3,7 +3,7 @@ import { fmt, fmtDay, compact } from '../api.js';
 import { heatColor, clipValue, intensity, yForPrice, priceTicks, yearColumns, cellAt, columnTotal, stackLabels } from '../heatmapRows.js';
 
 // Plot margins inside the wrapper: price axis left, cluster callouts right.
-const M = { top: 10, right: 132, bottom: 24, left: 60 };
+const M = { top: 10, right: 150, bottom: 24, left: 60 };
 
 // The daily cost-basis distribution over time: a canvas of cells (one column
 // per sampled week, one row per log price band, brightness = supply) under an
@@ -99,20 +99,21 @@ export default function HeatmapChart({ data }) {
                 y1: plot.y + yForPrice(c.to, levels, plot.h),
                 y2: plot.y + yForPrice(c.from, levels, plot.h),
               }));
-              const ys = stackLabels(cl.map(c => (c.y1 + c.y2) / 2 - 12), 44, plot.y + 12);
+              const ys = stackLabels(cl.map(c => (c.y1 + c.y2) / 2 - 14), 50, plot.y + 14);
               const bx = plot.x + plot.w + 6;
               return [...cl].sort((a, b) => (a.y1 + a.y2) - (b.y1 + b.y2)).map((c, i) => (
                 <g key={i}>
                   <path d={`M ${bx} ${c.y1} h 6 V ${c.y2} h -6`} fill="none" stroke="var(--text-dim)" />
                   <line x1={bx + 6} y1={(c.y1 + c.y2) / 2} x2={bx + 12} y2={ys[i]} stroke="var(--text-faint)" strokeOpacity={0.6} />
-                  <text x={bx + 14} y={ys[i]} fontSize={11} fontWeight={600} fill="var(--text)">{compact(c.btc)} BTC</text>
-                  <text x={bx + 14} y={ys[i] + 13} fontSize={10} fill="var(--text-faint)">{'$' + compact(c.from)} to {'$' + compact(c.to)}</text>
-                  <text x={bx + 14} y={ys[i] + 25} fontSize={10} fill="var(--text-faint)">{c.position}</text>
+                  <text x={bx + 14} y={ys[i]} fontSize={12.5} fontWeight={600} fill="var(--text)">{compact(c.btc)} BTC</text>
+                  <text x={bx + 14} y={ys[i] + 15} fontSize={11.5} fill="var(--text-dim)">{'$' + compact(c.from)} to {'$' + compact(c.to)}</text>
+                  <text x={bx + 14} y={ys[i] + 29} fontSize={11.5} fill="var(--text-dim)">{c.position}</text>
                 </g>
               ));
             })()}
             <circle cx={lastX} cy={lastY} r={4} fill="var(--btc)" stroke="var(--deep-black)" strokeWidth={1.5} />
-            <text x={lastX - 8} y={lastY - 8} textAnchor="end" fontSize={11} fontWeight={600} fill="var(--text)">{fmt(last.price, 'usd')}</text>
+            <text x={lastX - 8} y={lastY - 8} textAnchor="end" fontSize={12.5} fontWeight={600} fill="var(--text)"
+              stroke="var(--deep-black)" strokeWidth={3} paintOrder="stroke">{fmt(last.price, 'usd')}</text>
           </svg>
         )}
         {hover && hc && (

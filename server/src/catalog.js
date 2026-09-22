@@ -634,11 +634,68 @@ export const METRICS = [
     explain: 'Time in Bitcoin runs in halving epochs, so this chart bends each epoch into a ring: twelve o\'clock is the halving and a full turn is the next one. The color along each ring is MVRV, cold when the market trades below its cost basis and hot when it is stretched. Peaks and lows are marked where they fell on the dial, which is how regular the cycle has been. The hand is today, drawn across every ring, so the readings at the same hour in earlier cycles line up beside it.',
     method: 'Closed epochs map days to angle by their actual length. The open epoch uses block progress (blocks since the halving out of 210,000) and projects its length from the days elapsed so far. Rings are sampled every third day and colored on a diverging MVRV scale: blue below 1, neutral near 1.5, red above 3. Peaks and lows come from the shared cycle detector. Readings at today\'s hour are the nearest sample on each closed ring.',
   },
+  {
+    slug: 'realized-pnl-mirror', column: 'net_realized_pnl', columns: ['realized_profit', 'realized_loss'],
+    name: 'Realized Profit and Loss, Mirrored', category: 'profitloss',
+    format: 'usd_compact', kind: 'pnl',
+    short: 'Profit taken above the line and losses locked in below it, day by day, with the biggest capitulation days named.',
+    explain: 'Where the Realized Profit & Loss chart gives the net, this shows both sides at once: dollars of profit realized by the day\'s spenders rise above the axis in green, dollars of loss fall below it in red. Capitulations are the cliffs on the lower side, and the largest of them are labeled with their date and size. The headline is the worst loss day of the current bear.',
+    method: 'Realized profit and realized loss per day from the finalized metrics: each spent coin\'s value at the spend-day close against the close of the day it last moved. Loss is drawn negative. The eight largest loss days and five largest profit days across all history are labeled; the current bear runs from the shared detector\'s peak to the latest day.',
+  },
+  {
+    slug: 'holder-handoff', column: 'lth_supply', columns: ['sth_supply', 'lth_supply'],
+    name: 'Holder Handoff', category: 'cohorts',
+    format: 'percent', kind: 'handoff',
+    short: 'Long-term and short-term holders\' shares of supply over time, with the long-term share read at every cycle peak and low.',
+    explain: 'Tops are where long-term holders hand coins to newcomers; bottoms are where they take them back. The chart stacks the two cohorts\' shares of supply so that trade shows as the boundary moving, and marks the long-term share at every cycle peak and low. The headline is how much supply long-term holders have added since the current cycle low.',
+    method: 'Coins older than 155 days are long-term supply and younger coins short-term, from the daily UTXO snapshot; each share is that cohort over the two combined. Weekly samples. Peaks and lows come from the shared cycle detector.',
+  },
+  {
+    slug: 'miner-stress', column: 'hashrate_30d', columns: ['hashrate_30d', 'hashrate_60d'],
+    name: 'Miner Stress Episodes', category: 'mining',
+    format: 'number', unit: 'EH/s', kind: 'miners', logDefault: true,
+    short: 'Every hash-ribbon capitulation shaded on the price chart, with how long it lasted and where price stood 180 days later.',
+    explain: 'When the 30-day hashrate average drops under the 60-day average, miners are switching machines off: revenue no longer covers power. Those episodes are shaded on the price chart with their length, and each completed one carries the price change over the following 180 days, so the record of what followed miner stress sits on the picture rather than in a footnote.',
+    method: 'An episode is a run of at least 14 consecutive days with the 30-day simple average of difficulty-implied hashrate below the 60-day average. The 180-day change compares the first close on or after 180 days past the episode\'s end with the close on its last day. The lines are weekly samples.',
+  },
+  {
+    slug: 'who-bought-the-dip', column: 'balance_bands', columns: ['balance_bands'],
+    name: 'Who Bought the Dip', category: 'cohorts',
+    format: 'percent', kind: 'dipbuyers',
+    short: 'Change in each address-balance band\'s share of supply since the cycle low, against the same span after earlier lows.',
+    explain: 'Accumulation has a size class. This chart takes each band of address balances and shows how its share of supply has moved since the current cycle low, with the same span after every earlier low drawn as ghosts for comparison. Small bands gaining share is the classic retail-accumulation signature; large-band moves can be custody as much as whales, so the address caveat applies throughout.',
+    method: 'Balance bands are the daily address-level shares of supply (outputs with no standard address excluded). Change is today\'s share minus the share on the cycle low day, in points of supply; prior cycles are measured from their own lows over the same number of days. Lows come from the shared detector.',
+  },
+  {
+    slug: 'monthly-returns', column: 'price', columns: ['price'],
+    name: 'Monthly Returns', category: 'cycles',
+    format: 'percent', kind: 'returns',
+    short: 'Every month\'s return since 2010 as a grid, years down and months across, with the current month to date.',
+    explain: 'The calendar view of Bitcoin\'s price: each tile is one month\'s close-to-close return, green when positive and red when negative, deeper with size. Year totals sit at the edge. The current month is outlined and provisional, and the headline says how often that calendar month has closed higher in past years, which is the seasonality question this grid exists to answer.',
+    method: 'A month\'s return is its last close over the prior month\'s last close, minus one; the current month uses the latest close. Year totals compare December closes, or the latest close for the current year. The month history counts prior years with a full month.',
+  },
+  {
+    slug: 'same-hour', column: 'price', columns: ['price'],
+    name: 'Same Hour, Past Cycles', category: 'cycles',
+    format: 'percent', kind: 'samehour',
+    short: 'From today\'s position in the halving epoch, what price did over the next 90, 180 and 365 days in each earlier epoch.',
+    explain: 'Where are we in the cycle, and what happened next the last times the clock read this hour? This chart finds the day in each earlier epoch that matched today\'s progress through the current one and reports how price moved over the following 90, 180 and 365 days. It is a record, not a projection: those cycles had their own conditions, and the point is to make the comparison explicit rather than implied.',
+    method: 'Progress through the open epoch is blocks since the halving out of 210,000; each earlier epoch\'s matching day is its start plus that fraction of its actual length. Forward changes compare the first close on or after the horizon with the matching day\'s close. Horizons that run past the data are left blank.',
+  },
+  {
+    slug: 'days-since', column: 'price', columns: ['price'],
+    name: 'Days Since', category: 'cycles',
+    format: 'number', unit: 'days', kind: 'dayssince',
+    short: 'Days since the all-time high, the cycle low and the halving, and to the next halving, each beside the prior cycle\'s span.',
+    explain: 'Four counters that frame the cycle in time. Each shows today\'s count and, beside it, the span the prior cycle took for the same leg: how long its bear ran from peak to low, how long its recovery ran from low to the next peak, how long after the halving it peaked, and how long the epoch lasted. The next halving is estimated from the blocks remaining.',
+    method: 'Days between UTC calendar dates. The all-time high is the highest daily close; the cycle low and peaks come from the shared detector. The next halving is the blocks remaining in the epoch at ten minutes each, from the synced tip.',
+  },
 ];
 
 // Kinds that render their own chart form instead of a scalar time series:
 // no latest value, percentile, sparkline, alert, cycle overlay or story.
-export const PANEL_KINDS = ['stacked', 'urpd', 'bottoms', 'rallies', 'runs', 'underwater', 'scorecard', 'heatmap', 'clock'];
+export const PANEL_KINDS = ['stacked', 'urpd', 'bottoms', 'rallies', 'runs', 'underwater', 'scorecard', 'heatmap', 'clock',
+  'pnl', 'handoff', 'miners', 'dipbuyers', 'returns', 'samehour', 'dayssince'];
 export const isPanel = (m) => PANEL_KINDS.includes(m?.kind);
 
 export const bySlug = Object.fromEntries(METRICS.map(m => [m.slug, m]));

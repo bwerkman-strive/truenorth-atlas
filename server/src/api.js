@@ -11,7 +11,7 @@ import compression from 'compression';
 import pino from 'pino';
 import { pool, migrate, getState } from './db.js';
 import { projectSupply } from './supply.js';
-import { CATEGORIES, METRICS, bySlug, isPanel } from './catalog.js';
+import { CATEGORIES, METRICS, bySlug, isPanel, BAL_LABELS } from './catalog.js';
 import { config } from './config.js';
 import { explorerRouter, publicRateLimit } from './explorer.js';
 import { adminRouter, requireApiKey } from './keys.js';
@@ -25,6 +25,7 @@ import { buildStory } from './story.js';
 import { buildRuns, buildUnderwater, buildScorecard } from './cycleCharts.js';
 import { buildHeatmap } from './heatmap.js';
 import { buildClock } from './clock.js';
+import { buildPnl, buildHandoff, buildMiners, buildDipBuyers, buildReturns, buildSameHour, buildDaysSince } from './storyCharts.js';
 
 const log = pino({ level: process.env.LOG_LEVEL || 'info' });
 const app = express();
@@ -222,6 +223,31 @@ app.get('/api/clock', async (_req, res) => {
     res.json(buildClock(r.rows, HALVINGS, { tipHeight: tip.rows[0].h }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// ---- Story charts, sprint 3 ----------------------------------------------------
+// Seven small panels on the same detector (storyCharts.js). Each route pulls
+// only the columns its builder reads.
+const tipHeight = async () => (await pool.query('SELECT MAX(height)::int AS h FROM blocks')).rows[0].h;
+const daily = (cols) => pool.query(
+  `SELECT day::text AS day, price::float AS price${cols.map(c => `, ${c}`).join('')}
+   FROM metrics_daily WHERE price IS NOT NULL ORDER BY day ASC`);
+const panelRoute = (path, cols, build) => app.get(path, async (_req, res) => {
+  try {
+    const r = await daily(cols);
+    cache(res);
+    res.json(await build(r.rows));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+panelRoute('/api/pnl', ['realized_profit::float AS realized_profit', 'realized_loss::float AS realized_loss'],
+  rows => buildPnl(rows, HALVINGS));
+panelRoute('/api/handoff', ['sth_supply::float AS sth_supply', 'lth_supply::float AS lth_supply'],
+  rows => buildHandoff(rows, HALVINGS));
+panelRoute('/api/miners', ['hashrate_30d::float AS hashrate_30d', 'hashrate_60d::float AS hashrate_60d'],
+  rows => buildMiners(rows, HALVINGS));
+panelRoute('/api/dipbuyers', ['balance_bands'], rows => buildDipBuyers(rows, HALVINGS, BAL_LABELS));
+panelRoute('/api/returns', [], rows => buildReturns(rows));
+panelRoute('/api/samehour', [], async rows => buildSameHour(rows, HALVINGS, { tipHeight: await tipHeight() }));
+panelRoute('/api/dayssince', [], async rows => buildDaysSince(rows, HALVINGS, { tipHeight: await tipHeight() }));
 
 // ---- Story layer --------------------------------------------------------------
 // GET /api/story/:slug -> the facts a line metric's chart annotates and the

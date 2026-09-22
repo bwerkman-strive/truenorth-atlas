@@ -153,6 +153,117 @@ export function clockHeadline(data) {
   };
 }
 
+const usdC = (v) => `$${compact(v)}`;
+const signedPct = (v, d = 0) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(d)}%`;
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+export function pnlHeadline(data) {
+  if (!data?.series?.length) return null;
+  const b = data.bear, worst = b?.largestLoss ?? null, top = data.topLoss ?? [];
+  const parts = [];
+  if (worst) parts.push(`The largest loss-realization day of the epoch ${b.epoch} bear was ${usdC(worst.loss)} on ${fmtDay(worst.day)}.`);
+  if (top.length >= 3) parts.push(`Across all history the biggest were ${list(top.slice(0, 3).map(t => `${usdC(t.loss)} (${fmtDay(t.day)})`))}.`);
+  if (data.latest) parts.push(`On ${fmtDay(data.latest.day)}, spenders realized ${usdC(data.latest.profit ?? 0)} of profit and ${usdC(data.latest.loss ?? 0)} of loss.`);
+  return {
+    value: worst ? usdC(worst.loss) : (top[0] ? usdC(top[0].loss) : ''),
+    sub: worst ? `largest loss day of this bear, ${fmtDay(worst.day)}` : (top[0] ? `largest loss day on record, ${fmtDay(top[0].day)}` : ''),
+    takeaway: parts.join(' '),
+    asOf: data.latest?.day ?? null,
+  };
+}
+
+export function handoffHeadline(data) {
+  const c = data?.current;
+  if (!c) return null;
+  const closed = (data.marks ?? []).filter(m => !m.provisional && m.peak.lth !== null && m.low.lth !== null);
+  const parts = [`Long-term holders hold ${compact(c.lthBtc)} BTC, ${pct(c.lth)} of the two cohorts combined`
+    + (c.sinceLow ? `, ${c.sinceLow.deltaBtc >= 0 ? 'up' : 'down'} ${compact(Math.abs(c.sinceLow.deltaBtc))} BTC since the ${fmtDay(c.sinceLow.day)} low.` : '.')];
+  if (closed.length >= 2) parts.push(`At the last ${closed.length} cycle peaks their share read ${list(closed.map(m => pct(m.peak.lth)))}; at the lows, ${list(closed.map(m => pct(m.low.lth)))}.`);
+  return {
+    value: c.sinceLow ? `${c.sinceLow.deltaBtc >= 0 ? '+' : '−'}${compact(Math.abs(c.sinceLow.deltaBtc))} BTC` : pct(c.lth),
+    sub: c.sinceLow ? `long-term holder supply since the ${fmtDay(c.sinceLow.day)} low` : 'long-term holders\u2019 share of supply',
+    takeaway: parts.join(' '),
+    asOf: c.day,
+  };
+}
+
+export function minersHeadline(data) {
+  if (!data?.episodes) return null;
+  const s = data.stats, eps = data.episodes;
+  const parts = [`${s.count} miner capitulation${s.count === 1 ? '' : 's'} on record (30-day hashrate under the 60-day for 14 days or more)`
+    + (s.judged ? `; price was higher 180 days later after ${s.higher180} of the ${s.judged} completed.` : '.')];
+  const open = eps.find(e => e.ongoing);
+  if (open) parts.push(`One is under way: day ${open.days} since ${fmtDay(open.start)}.`);
+  else if (eps.length) { const last = eps[eps.length - 1]; parts.push(`The most recent ran ${last.days} days to ${fmtDay(last.end)}${last.after180 ? `, and price was ${signedPct(last.after180.change)} 180 days on` : ''}.`); }
+  return {
+    value: `${s.count} episodes`,
+    sub: s.judged ? `price higher 180 days later after ${s.higher180} of ${s.judged}` : 'hash-ribbon capitulations',
+    takeaway: parts.join(' '),
+    asOf: data.current?.day ?? null,
+  };
+}
+
+const pts = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(2)} points`;
+export function dipbuyersHeadline(data) {
+  const c = data?.current;
+  if (!c) return null;
+  const rows = c.rows.filter(r => r.delta !== null);
+  if (!rows.length) return null;
+  const gain = [...rows].sort((a, b) => b.delta - a.delta)[0];
+  const loss = [...rows].sort((a, b) => a.delta - b.delta)[0];
+  const parts = [`Since the ${fmtDay(c.since)} low (${c.days} days), addresses holding ${gain.band} BTC gained ${pts(gain.delta)} of supply share`
+    + (loss !== gain && loss.delta < 0 ? ` and ${loss.band} BTC lost ${pts(Math.abs(loss.delta)).replace('+', '')}.` : '.')];
+  const priorTop = (data.priors ?? []).map(p => { const r = [...p.rows].filter(x => x.delta !== null).sort((a, b) => b.delta - a.delta)[0]; return r ? `${r.band} BTC in epoch ${p.epoch}` : null; }).filter(Boolean);
+  if (priorTop.length) parts.push(`Over the same span after earlier lows, the biggest gainers were ${list(priorTop)}.`);
+  return { value: pts(gain.delta), sub: `addresses holding ${gain.band} BTC, share of supply since the ${fmtDay(c.since)} low`, takeaway: parts.join(' '), asOf: c.through };
+}
+
+export function returnsHeadline(data) {
+  const c = data?.current;
+  if (!c || !data.years?.length) return null;
+  const name = MONTH_NAMES[c.month - 1];
+  const s = data.monthStats;
+  const yr = data.years.find(y => y.year === c.year);
+  const parts = [];
+  if (c.ret !== null) parts.push(`${name} ${c.year} is ${signedPct(c.ret, 1)} to date.`);
+  if (s && s.years) parts.push(`${name} has closed higher in ${s.up} of the last ${s.years} years${s.median !== null ? `, median ${signedPct(s.median, 1)}` : ''}.`);
+  if (yr && yr.total !== null) parts.push(`${c.year} is ${signedPct(yr.total, 1)} year to date.`);
+  return {
+    value: c.ret !== null ? signedPct(c.ret, 1) : '',
+    sub: `${name} ${c.year} to date${s?.years ? ` · ${name} closed higher in ${s.up} of ${s.years} years` : ''}`,
+    takeaway: parts.join(' '),
+    asOf: c.day,
+  };
+}
+
+export function samehourHeadline(data) {
+  const t = data?.today;
+  if (!t || !data.rows?.length) return null;
+  const h = data.horizons.indexOf(180) >= 0 ? 180 : data.horizons[0];
+  const at = data.rows.map(r => ({ epoch: r.epoch, f: r.forward.find(x => x.days === h) })).filter(x => x.f && x.f.change !== null);
+  const parts = [`Today is day ${t.elapsed} of epoch ${t.epoch}${t.progress !== null ? `, ${pct(t.progress)} through by blocks` : ''}.`];
+  if (at.length) parts.push(`From the same point, ${list(at.map(x => `epoch ${x.epoch} ${x.f.change >= 0 ? 'gained' : 'lost'} ${Math.abs(x.f.change * 100).toFixed(0)}%`))} over the next ${h} days.`);
+  parts.push('History, not a forecast.');
+  return { value: `day ${t.elapsed}`, sub: `of epoch ${t.epoch}${t.progress !== null ? `, ${pct(t.progress)} by blocks` : ''}`, takeaway: parts.join(' '), asOf: t.day };
+}
+
+export function dayssinceHeadline(data) {
+  if (!data?.items?.length) return null;
+  const ath = data.items.find(i => i.key === 'ath'), low = data.items.find(i => i.key === 'low');
+  const halving = data.items.find(i => i.key === 'halving'), next = data.items.find(i => i.key === 'nextHalving');
+  const parts = [];
+  if (ath) parts.push(`${ath.days} days since the all-time high on ${fmtDay(ath.date)}${ath.prior ? ` (the ${ath.prior.label} took ${ath.prior.days})` : ''}.`);
+  if (low) parts.push(`${low.days} days since the ${fmtDay(low.date)} low${low.prior ? ` (the ${low.prior.label} took ${low.prior.days})` : ''}.`);
+  if (halving) parts.push(`${halving.days} days since the halving${halving.prior ? ` (the ${halving.prior.label} took ${halving.prior.days})` : ''}.`);
+  if (next) parts.push(`About ${next.days} days to the next halving, ${next.value.toLocaleString('en-US')} blocks away.`);
+  return {
+    value: ath ? `${ath.days} days` : '',
+    sub: ath ? `since the all-time high, ${fmtDay(ath.date)}` : '',
+    takeaway: parts.join(' '),
+    asOf: data.asOf,
+  };
+}
+
 export const HEADLINES = {
   bottoms: bottomsHeadline,
   rallies: ralliesHeadline,
@@ -161,4 +272,11 @@ export const HEADLINES = {
   scorecard: scorecardHeadline,
   heatmap: heatmapHeadline,
   clock: clockHeadline,
+  pnl: pnlHeadline,
+  handoff: handoffHeadline,
+  miners: minersHeadline,
+  dipbuyers: dipbuyersHeadline,
+  returns: returnsHeadline,
+  samehour: samehourHeadline,
+  dayssince: dayssinceHeadline,
 };

@@ -4,7 +4,7 @@ import {
   XAxis, YAxis, Tooltip, ReferenceLine, ReferenceDot, CartesianGrid,
 } from 'recharts';
 import { fmtDay } from '../api.js';
-import { TOOLTIP_PROPS, AXIS_TICK, EPOCH_COLORS } from '../chartTheme.js';
+import { TOOLTIP_PROPS, AXIS_TICK, EPOCH_COLORS, LABEL, LABEL_STRONG } from '../chartTheme.js';
 import { yearTicks } from '../ralliesRows.js';
 import { fmtDrawdown } from '../cycleRows.js';
 
@@ -26,7 +26,7 @@ export default function UnderwaterChart({ data }) {
     <>
       <div className="chartwrap">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={rows} margin={{ top: 10, right: 96, left: 0, bottom: 0 }}>
+          <ComposedChart data={rows} margin={{ top: 10, right: 118, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="uw-fill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="var(--hot)" stopOpacity={0.10} />
@@ -40,7 +40,7 @@ export default function UnderwaterChart({ data }) {
               formatter={(v) => [v === 0 ? 'new all-time high' : `${fmtDrawdown(v)} below the high`, 'Drawdown']} />
             {guides.map(g => (
               <ReferenceLine key={g.y} y={g.y} stroke="var(--text-faint)" strokeDasharray="2 6" strokeOpacity={0.7}
-                label={{ value: `${pct0(g.share)} of days below`, position: 'right', fill: 'var(--text-faint)', fontSize: 10 }} />
+                label={{ value: `${pct0(g.share)} of days below`, position: 'right', ...LABEL }} />
             ))}
             <Area dataKey="dd" name="dd" baseValue={0} isAnimationActive={false}
               stroke="var(--hot)" strokeWidth={1.1} fill="url(#uw-fill)" />
@@ -49,12 +49,12 @@ export default function UnderwaterChart({ data }) {
                 fill={color(b.epoch)} stroke="var(--deep-black)" strokeWidth={1}
                 label={{
                   value: `${pct0(b.depth)} · ${b.bearDays}d${b.ongoing ? ' so far' : ''}`,
-                  position: b.depth < -0.88 ? 'right' : 'bottom', fill: 'var(--text-dim)', fontSize: 10,
+                  position: b.depth < -0.88 ? 'right' : 'bottom', ...LABEL,
                 }} />
             ))}
             {c && c.dd < 0 && (
               <ReferenceDot x={c.day} y={c.dd} r={4.5} fill="var(--text)" stroke="var(--deep-black)" strokeWidth={1.5} isFront
-                label={{ value: `${fmtDrawdown(c.dd)} · day ${c.sinceAth}`, position: 'left', fill: 'var(--text)', fontSize: 11, fontWeight: 600 }} />
+                label={{ value: `${fmtDrawdown(c.dd)} · day ${c.sinceAth}`, position: 'left', ...LABEL_STRONG }} />
             )}
           </ComposedChart>
         </ResponsiveContainer>

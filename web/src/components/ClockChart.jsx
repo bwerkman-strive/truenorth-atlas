@@ -26,7 +26,7 @@ export default function ClockChart({ data }) {
             return (
               <g key={h}>
                 <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--ink-line)" strokeDasharray="2 5" />
-                <text x={lx} y={ly + 4} textAnchor="middle" fontSize={10.5} fill="var(--text-faint)" letterSpacing="0.05em">
+                <text x={lx} y={ly + 4} textAnchor="middle" fontSize={12} fill="var(--text-dim)" letterSpacing="0.05em">
                   {h === 0 ? 'HALVING' : `${Math.round(h * 100)}%`}
                 </text>
               </g>
@@ -44,7 +44,8 @@ export default function ClockChart({ data }) {
                 ))}
                 {/* Epoch number at the ring's start */}
                 {(() => { const [x, y] = polar(CX, CY, (r0 + r1) / 2, 0.005); return (
-                  <text x={x + 6} y={y + 4} fontSize={10} fontWeight={600} fill={EPOCH_COLORS[e.epoch] ?? 'var(--text)'}>E{e.epoch}</text>
+                  <text x={x + 6} y={y + 4} fontSize={11.5} fontWeight={600} fill={EPOCH_COLORS[e.epoch] ?? 'var(--text)'}
+                    stroke="var(--deep-black)" strokeWidth={3} paintOrder="stroke">E{e.epoch}</text>
                 ); })()}
                 {e.peak && (() => { const [x, y] = polar(CX, CY, r1 + 3, e.peak.t); return (
                   <path d={`M ${x} ${y} l -4 -7 h 8 z`} fill="var(--text)" transform={`rotate(${e.peak.t * 360} ${x} ${y})`} />
@@ -74,11 +75,11 @@ export default function ClockChart({ data }) {
                   const [x, y] = polar(CX, CY, (r.ring.r0 + r.ring.r1) / 2, t.t);
                   return <circle key={r.epoch} cx={x} cy={y} r={2.6} fill="var(--deep-black)" stroke="var(--text)" strokeWidth={1.2} />;
                 })}
-                <text x={16} y={26} fontSize={10.5} fill="var(--text-faint)" letterSpacing="0.05em">AT THIS HOUR</text>
+                <text x={16} y={26} fontSize={11.5} fill="var(--text-dim)" letterSpacing="0.05em">AT THIS HOUR</text>
                 {readings.map((r, k) => (
                   <g key={r.epoch}>
-                    <circle cx={21} cy={46 + k * 18} r={4} fill={mvrvColor(r.v)} />
-                    <text x={32} y={50 + k * 18} fontSize={11.5} fill="var(--text-dim)">
+                    <circle cx={21} cy={48 + k * 20} r={4.5} fill={mvrvColor(r.v)} />
+                    <text x={32} y={52 + k * 20} fontSize={12.5} fill="var(--text-dim)">
                       E{r.epoch} <tspan fontWeight={600} fill="var(--text)" style={{ fontFamily: 'var(--font-data)' }}>{r.v.toFixed(2)}</tspan>
                     </text>
                   </g>

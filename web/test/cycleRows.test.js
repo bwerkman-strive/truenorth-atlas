@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runRows, runKey, fmtMultiple, fmtTick, logTicks, dayTicks, fmtDrawdown } from '../src/cycleRows.js';
+import { runRows, runKey, fmtMultiple, fmtTick, logTicks, dayTicks, fmtDrawdown, staggerLabels, layoutLabels } from '../src/cycleRows.js';
 import { PANEL_KINDS } from '../src/kinds.js';
 import { PANEL_KINDS as SERVER_PANEL_KINDS } from '../../server/src/catalog.js';
 import { runsHeadline, underwaterHeadline, scorecardHeadline, ralliesHeadline, bottomsHeadline } from '../src/panelHeadlines.js';
@@ -33,6 +33,8 @@ test('fmtMultiple steps precision down as multiples grow; logTicks climbs just p
   assert.equal(fmtTick(10), '10x');
   assert.equal(fmtTick(2.5), '2.50x');
   assert.deepEqual(dayTicks(400), [0, 180, 360]);
+  assert.deepEqual(staggerLabels([0, 100, 130, 160, 900], 200), [0, 16, 32, 0, 0], 'crowded neighbours step down, cycling three rows');
+  assert.deepEqual(staggerLabels([500, 10], 200), [0, 0], 'order is by x, not by input index');
   assert.equal(fmtDrawdown(-0.3493), '-34.9%');
   assert.equal(fmtDrawdown(0), '0.0%');
 });
@@ -98,4 +100,15 @@ test('bottoms and rallies headlines moved here unchanged', () => {
   assert.equal(r.value, '+38.8%');
   assert.match(r.takeaway, /Largest rallies of the prior bears: \+35%\.$/);
   assert.equal(bottomsHeadline({ cycles: [] }), null);
+});
+
+test('layoutLabels drops a label a row when it would overprint a placed one, whatever its own y', () => {
+  const out = layoutLabels([
+    { x: 100, y: 50 }, { x: 130, y: 40 }, { x: 400, y: 50 }, { x: 110, y: 82 },
+  ], { width: 100, step: 16 });
+  assert.equal(out[0].y, 50);
+  assert.equal(out[1].y, 72);   // 40 and 56 both sit within a row of 50; 72 clears it
+  assert.equal(out[2].y, 50);   // far away horizontally, untouched
+  assert.equal(out[3].y, 98);   // 82 is within a row of the label at 72
+  assert.equal(layoutLabels([]).length, 0);
 });
